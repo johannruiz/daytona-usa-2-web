@@ -1,0 +1,5 @@
+.waiting-toast{position:fixed;z-index:35;right:max(16px,env(safe-area-inset-right));top:max(54px,env(safe-area-inset-top));width:min(340px,calc(100vw - 32px));box-sizing:border-box;padding:14px 17px;border:1px solid #b6b3a3;border-top:3px solid #ffe928;border-radius:5px;background:rgba(250,249,241,.94);box-shadow:0 5px 24px #0005;color:#222;pointer-events:none;font:13px/1.4 Arial,sans-serif}
+.waiting-toast strong,.waiting-toast span{display:block;overflow-wrap:anywhere}.waiting-toast strong{font-size:14px;margin-bottom:4px}.waiting-toast span{color:#66665a}
+.driver-card.driver-waiting{background:repeating-linear-gradient(135deg,#f5f3e955 0 8px,#f5f3e9aa 8px 16px)}.driver-waiting .driver-status{color:#6b5d14;font-size:10px}
+.public-room-row .ui-button{white-space:normal;max-width:155px;line-height:1.25}
+@media(max-width:600px){.waiting-toast{top:max(45px,env(safe-area-inset-top));right:12px;width:min(300px,calc(100vw - 24px));padding:11px 14px}.public-room-row .ui-button{max-width:130px}}

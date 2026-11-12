@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#05070b"><title>Daytona USA 2 Power Edition</title>
+  <!-- Interface: Daytona USA Web (css/ and d1/, same markup and classes), adapted to Daytona USA 2. -->
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/host-console.css">
+  <link rel="stylesheet" href="css/controller-settings.css">
+  <link rel="stylesheet" href="css/input-settings.css">
+  <link rel="stylesheet" href="css/wheel-feedback.css">
+  <link rel="stylesheet" href="css/single-player.css">
+  <link rel="stylesheet" href="css/ui-consistency.css">
+  <link rel="stylesheet" href="css/menu-gamepad.css">
+  <link rel="stylesheet" href="css/public-rooms.css">
+  <link rel="stylesheet" href="css/race-standings.css">
+  <link rel="stylesheet" href="css/waiting-room.css">
+  <link rel="stylesheet" href="css/game-chat.css">
+  <link rel="stylesheet" href="css/lobby-layout.css">
+  <link rel="stylesheet" href="css/ui-motion.css">
+  <link rel="stylesheet" href="css/restart-notice.css">
+  <link rel="stylesheet" href="d2.css">
+</head>
+<body>
+  <main class="arcade" aria-label="Daytona USA 2 arcade">
+    <div class="idle-scene" aria-hidden="true"><div class="horizon"></div><div class="track"></div><span class="track-number">2</span></div>
+    <canvas id="screen" width="496" height="384" tabindex="-1" aria-label="Daytona USA 2 game screen"></canvas>
+    <div class="fps" aria-label="Simulation and frame rate"><div><span id="fps">—</span><span>Hz</span></div><div><span id="drawFps">—</span><span>FPS</span></div></div>
+    <div class="race-network-hud"><div id="networkStatus" class="network-status" hidden aria-live="polite">Linking cabinets…</div><ol id="raceStandings" class="race-standings" hidden aria-label="Player race positions"></ol></div>
+    <nav class="arcade-tools" aria-label="Arcade controls">
+      <button id="menuBtn" aria-label="Open ROM and controls menu" title="ROM & controls · Esc">☰</button>
+      <button id="soundBtn" disabled aria-label="Unmute sound" title="Sound">♫</button>
+      <button id="fullscreenBtn" aria-label="Enter fullscreen" title="Fullscreen">⛶</button>
+    </nav>
+    <div id="touchControls" class="touch-controls" aria-label="Touch driving controls">
+      <div class="touch-top">
+        <div class="touch-actions"><button data-menu aria-label="Pause and open menu">☰</button><button data-sound aria-label="Mute sound" title="Mute sound" aria-pressed="false">♫</button></div>
+        <div class="touch-actions"><button data-action="coin">COIN</button><button data-action="start">START</button><button data-action="camera" aria-label="Cycle camera view">VIEW</button><button data-settings aria-label="Show arcade settings controls">⋯</button></div>
+      </div>
+      <div class="touch-service" hidden><button data-action="test">TEST</button><button data-action="service">SERVICE</button></div>
+      <div class="touch-launch-throttle" data-launch-throttle role="slider" tabindex="0" aria-label="Start throttle. Slide up to accelerate." aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><span class="launch-throttle-label">GAS</span><span class="launch-throttle-track"><i></i><b></b></span><output aria-hidden="true">0%</output></div>
+      <div class="steering-pad" data-steering role="group" aria-label="Drag left or right to steer"><span>‹</span><span class="steering-knob">↔</span><span>›</span></div>
+      <div class="touch-gears"><button data-action="down" aria-label="Shift down">−</button><span id="touchGear">N</span><button data-action="up" aria-label="Shift up">+</button></div>
+      <div class="touch-pedals"><button data-action="brake">BRAKE</button><button data-action="gas">GAS</button></div>
+      <span class="rotate-hint">Rotate your phone for a wider view</span>
+    </div>
+  </main>
+    <aside id="gameChat" class="game-chat" hidden aria-label="Room chat">
+      <button id="gameChatToggle" class="game-chat-toggle" type="button" aria-controls="gameChatPanel" aria-expanded="true" hidden><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg><span>CHAT</span><span id="gameChatUnread" class="unread-badge" hidden>0</span></button>
+      <section id="gameChatPanel" class="game-chat-panel" aria-labelledby="gameChatTitle"><header class="chat-heading"><h2 id="gameChatTitle"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg>ROOM CHAT</h2><button id="gameChatHide" class="game-chat-hide" type="button" aria-label="Hide chat" title="Hide chat"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button></header>
+      <div class="game-chat-scroll"><ol id="gameChatLog" role="log" aria-live="polite" aria-relevant="additions" aria-label="Room messages" tabindex="0"></ol><p id="gameChatEmpty" class="chat-empty">Meet your grid.<br>Chat until the engines start.</p><div class="game-chat-new-anchor"><button id="gameChatNew" class="game-chat-new" type="button" hidden>New messages ↓</button></div></div>
+      <form id="gameChatForm" class="chat-form"><label for="gameChatInput" class="sr-only">Message to your room</label><input id="gameChatInput" maxlength="240" autocomplete="off" enterkeyhint="send" placeholder="Message your friends…" aria-describedby="gameChatFeedback"><button id="gameChatSend" class="game-chat-send" type="submit" aria-label="Send message" disabled><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 9-18 9 4-9-4-9ZM7 12h14"/></svg></button></form><p id="gameChatFeedback" class="game-chat-feedback" role="status">Chat pauses during the race.</p></section>
+    </aside>
+  <aside id="waitingToast" class="waiting-toast" hidden role="status" aria-live="polite" aria-atomic="true"></aside>
+  <div id="overlay" class="launcher">
+    <div id="menuDialog" class="launcher-content" role="dialog" aria-modal="true" aria-labelledby="gameTitle">
+      <div id="mainMenu">
+      <section class="rom-modal" aria-describedby="message">
+        <button id="closeBtn" class="close-btn ui-button ui-secondary ui-icon-button" aria-label="Return to game" hidden>×</button>
+        <div class="modal-stripe" aria-hidden="true"></div>
+        <div class="edition"><span class="checkers" aria-hidden="true"></span> POWER EDITION <span class="checkers" aria-hidden="true"></span></div>
+        <h1 id="gameTitle" class="game-logo"><img src="img/daytona-usa-2-logo.png" width="640" height="246" alt="Daytona USA 2"></h1>
+        <p id="message" class="message">Choose your ROM to bring the arcade to life.</p>
+        <label class="dropzone" id="dropzone" for="romInput" tabindex="0" role="button" aria-label="Choose a Daytona USA 2 Power Edition ROM ZIP">
+          <input type="file" id="romInput" tabindex="-1" accept=".zip,application/zip">
+          <span class="file-icon" aria-hidden="true">↥</span>
+          <span><strong id="fileLabel">Choose ROM ZIP</strong><small>or drop your file here</small></span>
+          <span class="file-arrow" aria-hidden="true">↗</span>
+        </label>
+        <div class="rom-meta" id="romMeta" aria-live="polite">dayto2pe.zip · 1998 · Your file stays on this device.</div>
+        <div class="launch-options"><span id="graphicsSummary">Enhanced · Widescreen</span><span id="status" role="status">Preparing engine…</span></div>
+        <div id="playerModes" class="player-modes" hidden>
+          <button id="singlePlayer" class="launch-btn ui-button ui-primary" type="button"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="3"/><path d="M5 21v-3a7 7 0 0 1 14 0v3"/></svg>SINGLE PLAYER</button>
+          <button id="multiplayerPlayer" class="launch-btn ui-button ui-primary" type="button"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M17 4a3 3 0 0 1 0 6M18 13a6 6 0 0 1 4 6v2"/></svg>MULTIPLAYER</button>
+          <div class="rom-change-row"><button id="changeROM" type="button" class="ui-button ui-quiet" title="Choose another ROM ZIP"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l2 3h10v13H3V7ZM7 13h10m-3-3 3 3-3 3"/></svg>Change ROM</button></div>
+        </div>
+        <div id="mpUtilities" class="mp-utilities" hidden></div>
+        <section id="singlePlayerPanel" class="single-player-panel" hidden aria-labelledby="singleTitle">
+          <header class="entry-heading single-heading"><button id="singleBack" type="button" class="quiet-btn ui-button ui-quiet ui-back"><svg class="ui-icon ui-back-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m10 5-7 7 7 7M3 12h18"/></svg><span>Back</span></button><div><span class="room-eyebrow">SINGLE PLAYER</span><h2 id="singleTitle">Set up your race</h2><p>Your cabinet. All three courses.</p></div></header>
+          <form id="singleRaceForm">
+            <div class="single-race-options">
+              <div class="single-race-option"><label for="singleMode"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 21V3M5 4c5-4 9 4 14 0v10c-5 4-9-4-14 0"/><path d="M9 4v10M14 5v10M5 9c5-4 9 4 14 0"/></svg>Game mode</label><select id="singleMode" aria-describedby="singleModeHelp"><option value="0">Normal (Sprint)</option><option value="1">Grand Prix</option><option value="2">100 Miles</option><option value="3">200 Miles</option><option value="4">300 Miles</option><option value="5">400 Miles</option><option value="6">500 Miles</option></select><p id="singleModeHelp">The original arcade race rules.</p></div>
+              <div class="single-race-option"><label for="singleDifficulty"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M5 16v-4h3v4M11 16V8h3v8M17 16V4h3v12"/></svg>Difficulty</label><select id="singleDifficulty"><option value="0">Easy</option><option value="1">Normal</option><option value="2">Hard</option><option value="3">Hardest</option></select><p>The arcade’s original difficulty setting.</p></div>
+              <div class="single-race-option"><label for="singleVoice"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM5 11a7 7 0 0 0 14 0M12 18v3"/></svg>Announcer</label><select id="singleVoice" aria-describedby="singleVoiceHelp"><option value="0">Dennis</option><option value="1">Mitsuyoshi</option></select><p id="singleVoiceHelp">Mitsuyoshi is available in the Japan and Export regions.</p></div>
+              <div class="single-race-option"><label for="singleLapsBeginner"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Beginner laps</label><select id="singleLapsBeginner" data-laps="8-16"></select><p>Beginner course, Normal (Sprint) mode.</p></div>
+              <div class="single-race-option"><label for="singleLapsAdvanced"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Advanced laps</label><select id="singleLapsAdvanced" data-laps="4-12"></select><p>Advanced course, Normal (Sprint) mode.</p></div>
+              <div class="single-race-option"><label for="singleLapsExpert"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Expert laps</label><select id="singleLapsExpert" data-laps="2-8"></select><p>Expert course, Normal (Sprint) mode.</p></div>
+            </div>
+            <footer class="single-race-footer"><div><div class="single-cabinet-spec"><span>DELUXE</span><span>EXPORT</span><span>LOCAL PLAY</span></div><p id="singleSessionHint">Choose your course and car in the arcade.</p></div><button id="singleStart" type="submit" class="launch-btn ui-button ui-primary"><span id="singleStartLabel">ENTER ARCADE</span><span aria-hidden="true">→</span></button></footer>
+            <p id="singleStatus" class="single-status" role="status" aria-live="polite"></p>
+            <p class="single-saved-note">Race preferences are saved on this device. Changing them restarts the arcade.</p>
+          </form>
+        </section>
+        <section id="multiplayerEntry" class="room-entry" hidden aria-labelledby="entryTitle">
+          <div class="entry-heading discovery-heading"><button id="modeBack" type="button" class="quiet-btn ui-button ui-quiet ui-back"><svg class="ui-icon ui-back-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m10 5-7 7 7 7M3 12h18"/></svg><span>Back</span></button><div class="discovery-copy"><span class="room-eyebrow">MULTIPLAYER</span><h2 id="entryTitle">Link your cabinets.</h2><p>Up to 16 drivers, each on their own cabinet.</p></div><div class="driver-field"><label for="driverName">Driver name</label><input id="driverName" maxlength="24" value="Driver" autocomplete="nickname"></div></div>
+          <div class="discovery-layout">
+            <section class="public-board" aria-labelledby="publicRoomsTitle">
+              <header class="public-board-heading"><h3 id="publicRoomsTitle"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a17 17 0 0 1 0 18 17 17 0 0 1 0-18Z"/></svg>PUBLIC ROOMS <span id="publicRoomCount" class="public-room-count">0</span></h3><span id="directoryConnection" class="directory-connection" data-state="paused">Not available yet</span></header>
+              <div class="public-search"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></svg><label class="sr-only" for="publicRoomSearch">Find a room by name</label><input id="publicRoomSearch" type="search" placeholder="Find a room…" autocomplete="off" disabled></div>
+              <div class="public-list-body" id="publicListBody" aria-busy="false"><ul id="publicRoomsList" class="public-rooms-list" aria-label="Public rooms"></ul><div id="directoryEmpty" class="directory-empty"><svg class="directory-road" viewBox="0 0 80 64" aria-hidden="true" focusable="false"><path class="road-edges" d="M12 56c6-14 22-18 33-28S55 15 52 7M68 56c-10-14-13-19-10-29s5-13 2-20"/><path class="road-centre-near" d="m39 54 3-9"/><path class="road-centre-mid" d="m46 37 6-7"/><path class="road-centre-far" d="m56 22 1-5m0-5-1-4"/></svg><strong id="directoryEmptyTitle">Public rooms are coming soon.</strong><p id="directoryEmptyText">Create a private room and share its invitation with your friends.</p></div></div>
+              <footer class="public-board-footer"><span id="directoryStatus" role="status" aria-live="polite">Private invitations work now.</span><button id="retryPublicRooms" type="button" class="ui-button ui-quiet" hidden>Retry</button></footer>
+            </section>
+            <div class="discovery-actions">
+              <section class="entry-card create-card" aria-labelledby="createTitle"><h3 id="createTitle"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M19 9v8M15 13h8"/></svg>Create a room</h3>
+                <fieldset class="room-visibility"><legend class="sr-only">Room visibility</legend><label title="Public rooms are not available yet"><input type="radio" name="roomVisibility" value="public" disabled><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a17 17 0 0 1 0 18 17 17 0 0 1 0-18Z"/></svg>Public</label><label><input type="radio" name="roomVisibility" value="private" checked><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Private</label></fieldset>
+                <label for="publicRoomName" class="sr-only">Room name</label><input id="publicRoomName" maxlength="48" placeholder="Room name (optional)" autocomplete="off" aria-describedby="createVisibilityHint"><p id="createVisibilityHint" class="create-visibility-hint">Invite only · you approve new drivers. You host the master cabinet.</p><button id="createRoom" class="launch-btn ui-button ui-primary" type="button"><span id="createRoomLabel">CREATE PRIVATE ROOM</span><span aria-hidden="true">→</span></button>
+              </section>
+              <section id="joinCard" class="entry-card private-join" aria-labelledby="joinTitle"><h3 id="joinTitle"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 4h7v16h-7M3 12h12M10 7l5 5-5 5"/></svg>Have a private invitation?</h3><div class="private-join-fields"><label for="joinCode" class="sr-only">Invitation link or room code</label><input id="joinCode" autocomplete="off" spellcheck="false" placeholder="Paste link or room code" aria-describedby="invitationHint"><button id="joinRoom" class="ui-button ui-secondary" type="button">JOIN <span aria-hidden="true">→</span></button></div><p id="invitationHint" class="invitation-hint">Your host starts the linked game.</p></section>
+            </div>
+          </div>
+          <p id="entryStatus" class="entry-status" role="status" aria-live="polite"></p>
+          <div class="entry-community"><div><p class="entry-note">2–16 drivers · Your ROM stays on your device.</p></div></div>
+        </section>
+        <section id="roomPanel" class="room-panel" hidden aria-labelledby="roomTitle" data-mobile-tab="grid">
+          <div class="room-heading"><div><span id="roomVisibilityLabel" class="room-eyebrow">PRIVATE MULTIPLAYER</span><div class="room-title-row"><h2 id="roomTitle">Your room</h2></div></div><div class="room-heading-meta"><span id="roomPhase" class="phase-pill">LOBBY</span><span id="roomCount" class="room-count">0 / 16 drivers</span><div id="roomInvite" class="room-invite" hidden><button id="inviteRoom" type="button" class="ui-button ui-secondary" aria-haspopup="dialog" aria-controls="inviteBlock" aria-expanded="false"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m10 14 4-4M8 16l-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0M16 8l1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"/></svg>Invite friends</button><div id="inviteBlock" class="invite-card" data-menu-popover role="dialog" aria-labelledby="inviteTitle" tabindex="-1" hidden><div class="invite-heading"><h3 id="inviteTitle"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m10 14 4-4M8 16l-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0M16 8l1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"/></svg>INVITE FRIENDS</h3><button id="closeInvite" type="button" class="ui-button ui-secondary ui-icon-button" aria-label="Close invitation">×</button></div><label for="inviteLink" class="sr-only">Private invitation link</label><input id="inviteLink" readonly aria-describedby="inviteHint"><div class="invite-actions"><button id="copyRoom" type="button" class="ui-button ui-secondary">Copy link</button><button id="copyCode" type="button" class="quiet-btn ui-button ui-quiet">Copy code</button></div><span id="roomCode" hidden></span><p id="inviteHint" class="room-hint">Only admitted players can join the grid and chat.</p><p id="inviteFeedback" class="invite-feedback" role="status" aria-live="polite"></p></div></div></div></div>
+          
+          <div class="room-mobile-tabs" role="tablist" aria-label="Room view"><button id="roomGridTab" role="tab" aria-selected="true" aria-controls="roomWorkspace" type="button">ROOM</button><button id="roomChatTab" role="tab" aria-selected="false" aria-controls="chatPanel" type="button">CHAT <span id="mobileChatUnread" class="unread-badge" hidden>0</span></button></div>
+          
+          <div id="roomWorkspace" class="room-layout">
+            <section class="grid-section" aria-labelledby="gridTitle"><div class="section-label"><h3 id="gridTitle"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M17 4a3 3 0 0 1 0 6M18 13a6 6 0 0 1 4 6v2"/></svg>STARTING GRID</h3><div class="grid-heading-meta"><button id="pendingJump" type="button" class="ui-button ui-secondary" hidden>Requests</button><span id="readyCount">0 ready</span></div></div>
+              <div class="grid-scroll"><ul id="playersList" class="room-players" aria-label="Players"></ul>
+              
+              <p id="seatStatus" class="seat-status" role="status" aria-live="polite" hidden></p><section id="seatSwap" class="seat-swap-notice" hidden aria-labelledby="seatSwapTitle"><h4 id="seatSwapTitle">Seat swap</h4><p id="seatSwapMessage" role="status" aria-live="polite"></p><div class="seat-swap-actions"><button id="seatSwapAccept" type="button" class="ui-button ui-primary">Accept swap</button><button id="seatSwapDecline" type="button" class="ui-button ui-secondary">Decline</button><button id="seatSwapCancel" type="button" class="ui-button ui-secondary">Cancel request</button></div></section>
+              <p id="openSeatCount" class="open-seats">Invite a friend to fill the grid.</p>
+
+              <div id="pendingBlock" hidden><div class="section-label"><h3>JOIN REQUESTS</h3><div class="request-controls"><span id="pendingCount" aria-live="polite"></span></div></div><ul id="pendingList" class="room-pending"></ul></div>
+              </div>
+            </section>
+            <aside class="room-sidebar" aria-label="Room options">
+              <fieldset class="room-settings paged-race-settings"><legend>RACE SETTINGS</legend>
+                <div class="race-page-navigation"><span id="racePageTitle" role="status" aria-live="polite">Race setup <small>1 / 2</small></span><div><button id="racePagePrevious" type="button" class="ui-button ui-secondary" aria-label="Previous settings page" aria-controls="raceSettingsPages">‹</button><button id="racePageNext" type="button" class="ui-button ui-secondary" aria-label="Next settings page" aria-controls="raceSettingsPages">›</button></div></div>
+                <div id="raceSettingsPages" class="race-settings-pages">
+                  <div id="raceSetupPage" class="race-settings-page" role="group" aria-label="Race setup"><div class="race-selectors"><label for="roomMode">Game mode<select id="roomMode"><option value="0">Normal (Sprint)</option><option value="1">Grand Prix</option><option value="2">100 Miles</option><option value="3">200 Miles</option><option value="4">300 Miles</option><option value="5">400 Miles</option><option value="6">500 Miles</option></select></label><label for="roomDifficulty">Difficulty<select id="roomDifficulty"><option value="0">Easy</option><option value="1">Normal</option><option value="2">Hard</option><option value="3">Hardest</option></select></label><label for="roomVoice">Announcer<select id="roomVoice"><option value="0">Dennis</option><option value="1">Mitsuyoshi</option></select></label><label for="roomCollision">Player collision<select id="roomCollision"><option value="1">On</option><option value="0">Off (pass through)</option></select></label></div><p class="environment-help">With player collision off, drivers pass through each other; CPU cars and walls still collide.</p></div>
+                  <div id="raceLapsPage" class="race-settings-page" role="group" aria-label="Laps" hidden><div class="race-selectors"><label for="roomLapsBeginner">Beginner laps<select id="roomLapsBeginner" data-laps="8-16"></select></label><label for="roomLapsAdvanced">Advanced laps<select id="roomLapsAdvanced" data-laps="4-12"></select></label><label for="roomLapsExpert">Expert laps<select id="roomLapsExpert" data-laps="2-8"></select></label></div><p class="environment-help">Laps apply to Normal (Sprint) mode.</p></div>
+                </div><p id="roomSettingsHint" class="room-hint"></p>
+              </fieldset>
+            </aside>
+            <section id="chatPanel" class="room-chat" aria-labelledby="chatTitle"><div class="chat-heading"><h3 id="chatTitle"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg>LOBBY CHAT</h3><span id="chatUnread" class="unread-badge" hidden>0</span></div>
+              <div class="chat-scroll"><ol id="chatLog" role="log" aria-live="polite" aria-relevant="additions" aria-label="Lobby messages" tabindex="0"></ol><p id="chatEmpty" class="chat-empty">Meet your grid.<br><span>Say hello or coordinate the next race.</span></p><div class="chat-new-anchor"><button id="newChatMessages" type="button" class="new-messages ui-button ui-secondary" hidden>New messages ↓</button></div></div>
+              <form id="chatForm" class="chat-form"><label class="sr-only" for="chatInput">Message to the lobby</label><input id="chatInput" maxlength="240" autocomplete="off" enterkeyhint="send" placeholder="Message your friends…" aria-describedby="chatFeedback"><button id="chatSend" type="submit" aria-label="Send message" class="ui-button ui-secondary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 9-18 9 4-9-4-9ZM7 12h14"/></svg></button></form>
+              <div class="chat-footnote"><p id="chatFeedback" role="status" aria-live="polite">Only players in this room can read this chat.</p><span id="chatLength">0/240</span></div>
+            </section>
+          </div>
+          <footer class="room-footer"><div class="room-status-row"><p id="roomMessage" role="status" aria-live="polite"></p><p id="roomConnection" class="room-connection" role="status" aria-live="polite"></p></div><p id="arcadeLinkStatus" class="room-hint" hidden></p><div class="room-actions"><button id="leaveRoom" type="button" class="quiet-btn ui-button ui-quiet ui-back"><svg class="ui-icon ui-back-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m10 5-7 7 7 7M3 12h18"/></svg><span id="leaveRoomLabel">Leave room</span></button><button id="hostConsoleBtn" type="button" aria-label="Connections" title="Connections" class="ui-button ui-secondary" aria-controls="hostConsole" hidden><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg><span class="connections-label">Connections</span></button><span class="action-spacer"></span><button id="readyRoom" type="button" aria-pressed="false" class="ui-button ui-secondary">I’M READY</button><button id="startRoom" type="button" class="launch-btn ui-button ui-primary" disabled aria-busy="false"><span id="startRoomLabel">START GAME</span> <span aria-hidden="true">→</span></button><button id="stopRoom" type="button" hidden class="ui-button ui-secondary ui-danger">Return all to room</button><button id="returnRoomGame" type="button" class="launch-btn ui-button ui-primary" hidden>RETURN TO GAME <span aria-hidden="true">→</span></button></div></footer>
+          <p class="room-note">Background play depends on your browser. Keep the host cabinet running: it relays the link for everyone.</p>
+        </section>
+        <p class="first-run">First visit: Single cabinet · Export region · Zero credits.<br>Let attract mode play, or insert a coin to race.</p>
+      </section>
+      <section class="controls-guide" aria-label="How to play">
+        <div class="guide-heading"><span>DRIVER CONTROLS</span><span class="guide-rule"></span><div class="menu-quick-controls"><label><input id="vibrationEnabled" type="checkbox" checked>Controller vibration</label><button id="settingsBtn" type="button" aria-controls="settingsModal" class="ui-button ui-secondary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 3h4l.5 2.5 2 1.2 2.4-.8 2 3.4-1.9 1.7v2l1.9 1.7-2 3.4-2.4-.8-2 1.2L14 21h-4l-.5-2.5-2-1.2-2.4.8-2-3.4L5 13v-2L3.1 9.3l2-3.4 2.4.8 2-1.2L10 3Z"/><circle cx="12" cy="12" r="3"/></svg>Settings</button></div></div>
+        <div class="guide-columns">
+          <div><h2><span aria-hidden="true">⌨</span> Keyboard</h2><dl>
+            <div><dt>Steer / accelerate / brake</dt><dd id="guideKeyboardDriving"><kbd>←</kbd><kbd>→</kbd> <kbd>↑</kbd><kbd>↓</kbd></dd></div>
+            <div><dt>Insert coin / start</dt><dd id="guideKeyboardArcade"><kbd>5</kbd> <kbd>Enter</kbd></dd></div>
+            <div><dt>Gears / shift down & up</dt><dd id="guideKeyboardGears"><kbd>1–4</kbd> <kbd>Q</kbd><kbd>W</kbd></dd></div>
+            <div><dt>Camera views</dt><dd id="guideKeyboardViews"><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><kbd>F</kbd></dd></div>
+          </dl></div>
+          <div><h2><span aria-hidden="true">✚</span> Gamepad</h2><dl>
+            <div><dt>Steer</dt><dd id="guideGamepadSteer">Left stick</dd></div>
+            <div><dt>Accelerate / brake</dt><dd id="guideGamepadPedals">RT / LT</dd></div>
+            <div><dt>Gears / shift down & up</dt><dd id="guideGamepadGears">B A X Y / LB RB</dd></div>
+            <div><dt>Coin / start / camera</dt><dd id="guideGamepadViews">Back / Start / D-pad ↑ → ↓ ←</dd></div>
+          </dl></div>
+        </div>
+        <p class="touch-guide">On phone: drag the left pad to steer; hold GAS or BRAKE with your right thumb. Tap + / − to shift and VIEW to change camera. COIN adds credit; START begins a race. ☰ pauses; ♫ toggles sound; ⋯ reveals the TEST and SERVICE buttons. Landscape works best.</p>
+        <p class="service-note"><kbd>F2</kbd><span>Opens the original arcade TEST menu. <b>F3</b> is the service button.</span></p>
+        <p class="guide-footer">The car starts in neutral: choose a gear before you accelerate. <kbd>Esc</kbd> brings this menu back.</p>
+      </section>
+      <aside id="projectSupport" class="project-support" aria-label="Support this project"><a class="ui-button ui-secondary" href="https://github.com/sponsors/johannruiz" target="_blank" rel="noopener noreferrer" aria-describedby="projectSupportText"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg>Donate here</a><p id="projectSupportText">Support the development and maintenance of this project.</p></aside>
+      </div>
+      <section id="hostConsole" class="rom-modal connection-console" hidden aria-labelledby="hostConsoleTitle">
+        <div class="modal-stripe" aria-hidden="true"></div>
+        <header class="connection-header"><button id="hostConsoleBack" type="button" class="quiet-btn ui-button ui-quiet ui-back"><svg class="ui-icon ui-back-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m10 5-7 7 7 7M3 12h18"/></svg><span>Back</span></button><div><span class="room-eyebrow">HOST TOOLS</span><h1 id="hostConsoleTitle">Connection console</h1></div><button id="hostConsoleExport" type="button" class="ui-button ui-secondary">Export report ↓</button></header>
+        <div class="connection-summary"><span id="hostConsoleState" class="phase-pill"></span><p id="hostConsoleSummary"></p></div>
+        <div class="settings-tabs connection-tabs" role="tablist" aria-label="Connection console view"><button id="connectionPlayersTab" role="tab" aria-selected="true" aria-controls="connectionPlayersPanel" type="button">Players <span id="connectionPlayerCount"></span></button><button id="connectionEventsTab" role="tab" aria-selected="false" aria-controls="connectionEventsPanel" tabindex="-1" type="button">Events <span id="connectionEventCount"></span></button></div>
+        <section id="connectionPlayersPanel" role="tabpanel" aria-labelledby="connectionPlayersTab">
+          <div class="connection-scroll" tabindex="0" aria-label="Connection measurements"><table class="connection-table"><caption class="sr-only">Host observations and each cabinet’s reported link measurements</caption><thead><tr><th scope="col">Driver / details</th><th scope="col">Connection</th><th scope="col">RTT</th><th scope="col">SIM</th><th scope="col">Game update age</th><th scope="col">Loss</th></tr></thead><tbody id="connectionRows"></tbody></table><p id="connectionRowsEmpty" class="connection-empty" hidden>No drivers in the room.</p></div>
+          <p class="connection-help">RTT: host ↔ each driver. SIM: emulation fields/s, not display FPS. Game update age: time since the host last received that cabinet’s car. Loss: car records that never arrived, as the receiving cabinet saw them. Each cabinet shows the others through a playout buffer and a bounded prediction; open a driver for its details. “—” means unavailable.</p>
+        </section>
+        <section id="connectionEventsPanel" role="tabpanel" aria-labelledby="connectionEventsTab" hidden>
+          <div class="connection-scroll" tabindex="0" aria-label="Connection events"><ol id="connectionEvents" class="connection-events"></ol><p id="connectionEventsEmpty" class="connection-empty">No events yet.</p></div>
+        </section>
+      </section>
+      <section id="settingsModal" class="rom-modal settings-modal" hidden>
+        <div class="modal-stripe" aria-hidden="true"></div>
+        <header class="settings-header"><button id="settingsBack" type="button" aria-label="Back to previous menu" class="ui-button ui-quiet ui-back"><svg class="ui-icon ui-back-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m10 5-7 7 7 7M3 12h18"/></svg><span>Back</span></button><h1 id="settingsTitle">Settings</h1></header>
+        <div class="settings-tabs" role="tablist" aria-label="Settings categories">
+          <button id="graphicsTab" type="button" role="tab" aria-selected="true" aria-controls="graphicsPanel"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 21h8M12 17v4M6 13l4-4 3 3 3-5 2 3"/></svg>Graphics</button>
+          <button id="controllerTab" type="button" role="tab" aria-selected="false" aria-controls="controllerPanel" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 7h10c2 0 3 2 3.5 4l1 6c.3 2-1.8 3-3.2 1.5L15 15H9l-3.3 3.5C4.3 20 2.2 19 2.5 17l1-6C4 9 5 7 7 7Z M6 11h4M8 9v4"/><path d="M16 10h.01M18 12h.01" stroke-width="3"/></svg>Control</button>
+          <button id="inputTab" type="button" role="tab" aria-selected="false" aria-controls="inputPanel" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 16h10"/></svg><span id="inputTabLabel">Keyboard</span></button>
+          <button id="soundTab" type="button" role="tab" aria-selected="false" aria-controls="soundPanel" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 9h4l5-4v14l-5-4H3V9ZM16 8a6 6 0 0 1 0 8M19 5a10 10 0 0 1 0 14"/></svg>Sound</button>
+          <button id="experimentalTab" type="button" role="tab" aria-selected="false" aria-controls="experimentalPanel" tabindex="-1"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3h6M10 3v6l-6 10a1.3 1.3 0 0 0 1.2 2h13.6a1.3 1.3 0 0 0 1.2-2L14 9V3M7 15h10M10 18h.01M14 17h.01"/></svg>Experimental</button>
+        </div>
+        <section id="controllerPanel" class="settings-panel controller-panel" role="tabpanel" aria-labelledby="controllerTab" hidden>
+          <div id="controllerControls"></div>
+          <div id="controllerFeelContent" hidden>
+          <div class="controller-axis-row"><label for="controllerSteeringAxis">Steering input<select id="controllerSteeringAxis"></select></label><label class="controller-invert"><input id="controllerSteeringInvert" type="checkbox">Invert axis</label></div>
+          <label class="setting-toggle"><span>Controller vibration<small>Turn all controller feedback on or off.</small></span><input id="settingsVibrationEnabled" type="checkbox" checked></label>
+          <div class="setting-slider"><div><label for="rumbleIntensity">Vibration intensity</label><output id="rumbleValue" for="rumbleIntensity">100%</output></div><input id="rumbleIntensity" type="range" min="0" max="100" step="5" value="100" aria-describedby="rumbleHelp"><p id="rumbleHelp">Impacts, wall scrapes and hard cornering, read from the arcade wheel’s drive board. Nothing while the car stands still.</p></div>
+          <p id="rumbleStatus" class="device-status" role="status">Connect a controller</p>
+          <div class="setting-slider"><div><label for="joystickDeadzone">Stick dead zone</label><output id="joystickDeadzoneValue" for="joystickDeadzone">8%</output></div><input id="joystickDeadzone" type="range" min="0" max="30" step="1" value="8" aria-describedby="joystickDeadzoneHelp"><p id="joystickDeadzoneHelp">Ignores small movements around the centre. Increase only until drift stops; 8% is the default.</p></div>
+          <div class="setting-slider"><div><label for="joystickSensitivity">Joystick sensitivity</label><output id="joystickSensitivityValue" for="joystickSensitivity">100%</output></div><input id="joystickSensitivity" type="range" min="25" max="175" step="5" value="100" aria-describedby="joystickSensitivityHelp"><p id="joystickSensitivityHelp">100% keeps the softened steering. Lower for finer turns; higher for a quicker response.</p></div>
+          </div>
+        </section>
+        <section id="graphicsPanel" class="settings-panel" role="tabpanel" aria-labelledby="graphicsTab">
+          <h2>Your view of the course</h2><p class="settings-intro">WebGPU draws every frame: the Real3D scene, its textures and the 2D layers.</p>
+          <fieldset class="distance-options"><legend>Display</legend>
+            <label><input id="displayClassic" type="radio" name="displayMode" value="classic"><span><strong>Classic</strong><small>Original 4:3 arcade resolution, 496 × 384.</small></span></label>
+            <label><input id="displayEnhanced" type="radio" name="displayMode" value="enhanced" checked><span><strong>Enhanced <em>Default</em></strong><small>Widescreen at your window’s resolution, with the original HUD.</small></span></label>
+          </fieldset>
+          <fieldset class="distance-options"><legend>Render scale</legend>
+            <label><input type="radio" name="renderScale" value="0.5"><span><strong>50%</strong><small>Lightest load, for slower GPUs.</small></span></label>
+            <label><input type="radio" name="renderScale" value="0.75"><span><strong>75%</strong><small>Balanced.</small></span></label>
+            <label><input type="radio" name="renderScale" value="1" checked><span><strong>100% <em>Default</em></strong><small>Full window resolution.</small></span></label>
+          </fieldset>
+        </section>
+        <section id="inputPanel" class="settings-panel" role="tabpanel" aria-labelledby="inputTab" hidden><div id="keyboardControls"></div></section>
+        <section id="soundPanel" class="settings-panel" role="tabpanel" aria-labelledby="soundTab" hidden>
+          <h2>Your sound mix</h2><p class="settings-intro">The arcade’s music, engine and effects (SCSP and the DSB2 music board).</p>
+          <div class="setting-slider"><div><label for="volumeIntensity">Game volume</label><output id="volumeValue" for="volumeIntensity">100%</output></div><input id="volumeIntensity" type="range" min="0" max="100" step="5" value="100" aria-describedby="volumeHelp"><p id="volumeHelp">0 is silent. The in-game mute button keeps this volume setting.</p></div>
+          <div class="setting-slider"><div><label for="uiVolumeIntensity">Interface volume</label><output id="uiVolumeValue" for="uiVolumeIntensity">100%</output></div><input id="uiVolumeIntensity" type="range" min="0" max="100" step="5" value="100" aria-describedby="uiVolumeHelp"><p id="uiVolumeHelp">Lobby chat, join requests and Ready confirmations on your device. 0 is silent.</p></div>
+          <button id="previewUISound" class="input-reset ui-button ui-secondary" type="button">Preview interface sound</button>
+        </section>
+        <section id="experimentalPanel" class="settings-panel" role="tabpanel" aria-labelledby="experimentalTab" hidden>
+          <h2>Racing wheel setup <em class="experimental-badge">Experimental</em></h2>
+          <p class="settings-intro">Choose your wheel. For each control, click Detect input and then move it. Capture the steering and pedal positions afterwards. Profiles save per device.</p>
+          <p class="wheel-help">If a device is missing, press one of its buttons, use PC mode and check its manufacturer's driver. Devices must be recognised by your browser.</p>
+          <div class="wheel-setup-grid"><section class="wheel-input-section" aria-labelledby="wheelInputTitle"><h3 id="wheelInputTitle"><span class="wheel-step">1</span>Input &amp; calibration</h3><div id="wheelControls"></div></section></div>
+        </section>
+        <footer class="settings-footer">Saved automatically on this device.<span>Back returns to the menu · Esc goes back</span></footer>
+      </section>
+    </div>
+  </div>
+  <div id="restartNotice" class="restart-notice" role="alertdialog" aria-modal="true" aria-labelledby="restartTitle" aria-describedby="restartText" hidden>
+    <section class="restart-card"><span class="restart-spinner" aria-hidden="true"></span><span id="restartEyebrow" class="room-eyebrow"></span><h2 id="restartTitle">Restarting the cabinet</h2><p id="restartText">One moment…</p></section>
+  </div>
+  <div id="menuGamepadHints" class="menu-gamepad-hints" role="status" aria-label="Controller menu controls" hidden></div>
+  <script type="module" src="main.js"></script>
+  <small id="buildVersion" class="build-version"><span>D2 web</span> · <time datetime="2026-11-12">12.11.26</time></small>
+</body>
+</html>

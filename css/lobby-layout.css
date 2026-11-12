@@ -1,0 +1,118 @@
+/* Three balanced areas; invitation is a disclosure, not another sidebar card. */
+.room-layout{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:stretch}
+.room-panel{--lobby-panel-height:388px}
+.room-panel .grid-section,.room-panel .room-settings,.room-panel .room-chat{height:var(--lobby-panel-height);border:1px solid #cecec4;border-radius:5px;background:#ffffffa8;box-sizing:border-box}
+.room-panel .grid-section{display:flex;flex-direction:column;padding:14px;min-height:0}
+.grid-section>.section-label{flex-shrink:0;padding-bottom:10px;border-bottom:1px solid #e4e4db;margin-bottom:12px}
+.grid-scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#c9c9be transparent;margin:-3px;padding:3px}
+.room-panel .room-players{gap:7px}
+.room-panel .room-players .driver-card{height:54px;min-height:54px;padding:7px}
+.room-panel .room-players .driver-card.empty-slot{padding:0}
+.room-panel .seat-status{font-size:10px;line-height:1.4;margin-top:10px}
+.room-panel .room-sidebar{display:block}
+.room-panel .room-settings{position:relative;margin:0;padding:44px 14px 12px}
+.room-settings legend{position:absolute;top:14px;left:14px;margin:0;padding:0;font-size:11px}
+.room-panel .race-page-navigation{padding-bottom:10px;margin-bottom:12px}
+.room-panel .race-settings-pages{height:167px}
+.room-panel .paged-race-settings .room-hint{font-size:10px;line-height:1.5;min-height:30px;margin:8px 0 0;padding-top:10px;border-top:1px solid #e4e4db}
+.room-panel .room-chat{padding:14px}
+.room-panel .room-heading{margin-bottom:18px;padding-top:14px}
+.room-panel .room-heading h2{font-size:25px;overflow-wrap:anywhere}
+.room-heading-meta{gap:9px;flex-shrink:0}
+.room-panel .room-footer{margin-top:18px;padding-top:13px}
+.room-status-row{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;margin-bottom:12px}
+.room-panel .room-status-row #roomMessage,.room-panel .room-status-row #roomConnection{margin:0;min-height:0;font-size:11px;line-height:1.5}
+.room-status-row #roomConnection{flex-shrink:0;max-width:40%;text-align:right}
+.room-footer>#arcadeLinkStatus:not([hidden]){margin:0 0 10px}
+.room-panel .room-note{font-size:9px;margin-top:12px;color:#808076}
+.room-invite{position:relative}
+#menuDialog #inviteRoom{min-height:38px;font-size:11px;padding:8px 12px;gap:7px;white-space:nowrap}
+#inviteBlock{position:fixed;inset:auto;margin:0;width:min(340px,calc(100vw - 24px));padding:14px;border:1px solid #bdbdb3;border-radius:5px;box-shadow:0 8px 25px #0003;background:#fffffb;color:#25251f;text-align:left;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#c9c9be transparent}
+#inviteBlock::backdrop{background:transparent}
+.invite-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+#inviteBlock h3{font-size:11px;margin:0}
+#menuDialog #closeInvite{min-width:32px;min-height:32px;width:32px;height:32px;padding:0;font-size:21px}
+#inviteBlock input{display:block;width:100%;min-height:40px;font-size:11px}
+#inviteBlock .invite-actions{display:flex;flex-direction:row;gap:8px;margin-top:10px}
+#inviteBlock .room-hint{display:block;font-size:10px;line-height:1.5;margin-top:10px}
+.invite-feedback{min-height:2.7em;margin:8px 0 0;font-size:10px;line-height:1.4;color:#456747}
+.invite-fallback #inviteBlock{position:absolute;z-index:12;top:calc(100% + 8px);right:0;left:auto;width:min(330px,calc(100vw - 80px));max-height:65vh}
+@media(min-width:981px) and (max-height:780px){.room-panel .room-heading{padding-top:10px;margin-bottom:14px}.room-panel .room-heading h2{font-size:23px}}
+@media(min-width:981px) and (max-height:680px){.room-panel{--lobby-panel-height:388px}.room-panel .room-players .driver-card{height:50px;min-height:50px}.room-panel .race-settings-pages{height:167px}.room-panel .room-settings{padding-top:41px}}
+@media(min-width:761px) and (max-width:980px){.room-layout{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)}.room-panel .room-chat{grid-column:1/-1;height:240px}.room-panel .room-heading h2{font-size:22px}}
+@media(max-width:760px){
+ .room-layout{grid-template-columns:minmax(0,1fr);gap:14px}
+ .room-panel .room-heading{flex-wrap:wrap;align-items:flex-start;gap:10px;padding-top:12px;margin-bottom:14px}
+ .room-panel .room-heading h2{font-size:23px}.room-heading-meta{flex:1 0 100%;justify-content:space-between}
+ .room-heading-meta .phase-pill{display:inline-flex;font-size:8px;padding:6px}
+ .room-panel .grid-section{height:auto;padding:12px}.grid-scroll{overflow:visible}
+ .room-panel .room-players .driver-card{height:auto;min-height:64px;padding:8px}.room-panel .room-players .driver-card.empty-slot{padding:0}
+ .room-panel .room-sidebar{display:block}.room-panel .room-settings{height:410px;padding:47px 12px 12px}
+ .room-panel .room-settings legend{left:12px}.room-panel .race-settings-pages{height:180px}
+ .room-panel .room-chat{height:min(390px,51dvh);min-height:250px;padding:12px}
+ #menuDialog #inviteRoom{min-height:44px}#menuDialog #closeInvite{min-width:44px;min-height:44px;width:44px;height:44px}
+ #inviteBlock input{font-size:16px;min-height:44px}#inviteBlock .invite-actions .ui-button{min-height:44px}
+ .room-status-row{flex-wrap:wrap;gap:7px}.room-status-row #roomConnection{max-width:100%;font-size:10px}
+ .room-panel .room-note{font-size:9px}
+}
+@media(pointer:coarse){#menuDialog #closeInvite{min-width:44px;min-height:44px;width:44px;height:44px}}
+.room-panel[data-phase=connecting] .grid-section,.room-panel[data-phase=pending] .grid-section,.room-panel[data-phase=error] .grid-section{height:auto;min-height:167px}
+
+.grid-heading-meta{display:flex;align-items:center;gap:8px;font-size:10px;color:#6f6f65}
+#menuDialog #pendingJump{min-height:26px;padding:4px 7px;font-size:9px;color:#7b5e08;background:#fff3bf;border-color:#d4c17c}
+@media(pointer:coarse){#menuDialog #pendingJump{min-height:44px}}
+
+.invite-feedback[data-state=error]{color:#a32c22}
+
+.room-panel .environment-setting{grid-column:1/-1}.room-panel .environment-help{font-size:11px;line-height:1.6;color:#68685e;margin:14px 0 0}.room-panel #raceEnvironmentPage .race-selectors{grid-template-columns:minmax(0,1fr)}
+
+/* Session labels reserve space without squeezing long names into the status. */
+.room-panel .room-players :is(.driver-in-game,.driver-preparing){grid-template-columns:25px minmax(0,1fr) 52px}
+.room-panel :is(.driver-in-game,.driver-preparing) .driver-status{white-space:nowrap}
+.room-panel .driver-in-game .driver-status{color:#276a3c;font-weight:700}
+
+/* Keep the two header actions clear of the logo on narrow phones. */
+@media(max-width:480px){
+ #menuDialog .mp-utilities #hostConsoleBtn{width:44px;padding:10px;flex-shrink:0}
+ #menuDialog .mp-utilities #hostConsoleBtn .connections-label{display:none}
+ #menuDialog .mp-utilities #settingsBtn{padding-inline:10px}
+ #menuDialog .mp-utilities .menu-quick-controls{gap:6px}
+}
+
+/* Personal livery stays outside the shared, paginated race rules. */
+.room-personal-livery{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid #d4d2c8;padding-top:12px;margin-top:10px;min-width:0}
+.room-personal-livery>span{font-size:12px;font-weight:700;min-width:0}.room-personal-livery small{display:block;max-width:145px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:400;color:#6a6a60;margin-top:4px}
+#menuDialog #roomLivery{flex-shrink:0;gap:7px;padding:9px 10px;font-size:12px;min-height:44px}
+.host-transfer-dialog{width:min(460px,calc(100vw - 32px));padding:26px;border:1px solid #bdbbae;border-radius:8px;background:#fafaf7;color:#20201c;box-shadow:0 16px 70px #0006}
+.host-transfer-dialog::backdrop{background:#0008}.host-transfer-dialog h2{margin:10px 0 16px;font-size:24px;font-style:normal;overflow-wrap:anywhere}.host-transfer-dialog p{font:14px/1.6 Arial,sans-serif}.host-transfer-eyebrow{font-size:10px;letter-spacing:2px;font-weight:800;color:#ad1414}.host-transfer-detail{color:#66665e}.host-transfer-buttons{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}.host-transfer-buttons button{min-height:44px}
+@media(max-width:760px){.room-panel .room-settings{height:410px}.room-personal-livery small{max-width:125px}}
+.driver-options-dialog{width:min(340px,calc(100vw - 32px));padding:20px}
+.driver-options-dialog header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}.driver-options-dialog header h2{font-size:20px;margin:0;min-width:0}
+#menuDialog .driver-options-dialog .options-close{flex-shrink:0;min-width:36px;min-height:36px;padding:4px;font-size:22px;line-height:1}
+.driver-option-buttons{display:grid;gap:10px}#menuDialog .driver-option-buttons .ui-button{justify-content:flex-start;min-height:46px;gap:10px;width:100%;font-size:13px}
+@media(pointer:coarse){#menuDialog .driver-options-dialog .options-close{min-width:44px;min-height:44px}.host-transfer-dialog{padding:20px}}
+
+#menuDialog .driver-card:has(>.remove-driver:not([hidden])) .seat-swap{right:34px}
+@media(pointer:coarse){#menuDialog .driver-card:has(>.remove-driver:not([hidden])) .seat-swap{right:48px}#menuDialog .driver-card:has(>.remove-driver:not([hidden])) .seat-card-action{left:6px;right:4px;bottom:7px;font-size:10px;line-height:1.2;white-space:normal;background:transparent}}
+
+/* Paint feedback on the whole card, independent of the smaller action hitbox. */
+#menuDialog .driver-card:has(>.seat-swap:enabled:is(:hover,:focus-visible,.gamepad-focus)){background:#fff9e8;box-shadow:inset 0 0 0 1px #d7bf6c}
+#menuDialog .driver-card>.seat-swap:enabled:is(:hover,:focus-visible,.gamepad-focus){background:transparent;outline:none!important;box-shadow:none}
+
+.room-title-row{display:flex;align-items:center;gap:10px;min-width:0}.room-title-row h2{min-width:0;margin-bottom:0}
+#menuDialog #editRoomName{flex-shrink:0;width:34px;min-width:34px;height:34px;min-height:34px;padding:8px;border-color:#c5c3b8;background:#ffffff80}
+.room-name-dialog label{display:block;font-size:12px;font-weight:700;margin-bottom:8px}.room-name-dialog input{box-sizing:border-box;width:100%;min-height:44px;font-size:16px;padding:10px 12px;background:#fff;color:#25251f;border:1px solid #bdbdb3;border-radius:3px}.room-name-error{color:#a32c22;font-size:12px}
+@media(pointer:coarse){#menuDialog #editRoomName{width:44px;min-width:44px;height:44px;min-height:44px;padding:12px}}
+
+/* Expand only visible menu screens with the optional support footer.
+   Rooms/settings keep their original geometry when that footer is unavailable. */
+#mainMenu:not([hidden]):has(>.project-support:not([hidden])){display:flex;flex-direction:column;min-height:calc(100dvh - 44px)}
+#mainMenu:not([hidden]):has(>.project-support:not([hidden]))>.rom-modal{margin-top:auto}
+@media(min-height:900px){#mainMenu:not([hidden]):has(>.project-support:not([hidden])){min-height:calc(100dvh - 70px)}}
+.project-support{position:static;align-self:center;display:flex;flex-direction:column;align-items:center;box-sizing:border-box;width:100%;margin:auto 0 0;padding:18px 4px 0;gap:5px;text-align:center;color:#d8d8cf;background:transparent}
+#menuDialog .project-support .ui-button{min-height:44px;padding:0 12px;gap:7px;font-size:11px;font-weight:700;text-decoration:none;background:#171717;border:1px solid #ffffff60;border-radius:4px;color:#ffe12e;box-shadow:none}
+#menuDialog .project-support a.ui-button:hover{background:#292929;border-color:#ffffff60;color:#ffe12e}
+#menuDialog .project-support a.ui-button:focus-visible{outline:2px solid #ffe12e;outline-offset:3px}
+.project-support .ui-icon{color:currentColor;fill:none;stroke:currentColor;stroke-width:1.8}.project-support p{margin:0;font-size:clamp(8px,2.65vw,11px);line-height:1.45;white-space:nowrap}
+.project-support[hidden],.simulation-pause-notice[hidden]{display:none}
+.simulation-pause-notice{padding:12px 14px;margin:0 0 14px;border:1px solid #c7aa48;border-radius:4px;background:#fff8df;color:#514011;text-align:left}.simulation-pause-notice strong{font-size:13px}.simulation-pause-notice p{font-size:12px;line-height:1.55;margin:5px 0 0}

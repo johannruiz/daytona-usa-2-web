@@ -1,0 +1,33 @@
+.wheel-setup-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.75fr);gap:24px;align-items:start}
+#experimentalPanel{container:wheel-setup / inline-size}
+@container wheel-setup (max-width:760px){.wheel-setup-grid{grid-template-columns:1fr}}
+.wheel-input-section,.wheel-feedback-card{min-width:0}
+.wheel-input-section>h3,.wheel-feedback-card h3{font-size:16px;margin:0 0 10px;font-weight:800}
+.wheel-step{display:inline-grid;place-items:center;width:24px;height:24px;border:1px solid #c9c8be;border-radius:50%;margin-right:7px;font-size:12px;color:#77776b}
+.wheel-feedback-card{padding:20px;border:1px solid #cbc9bf;border-radius:6px;background:linear-gradient(150deg,#fff,#f4f3ed)}
+.wheel-feedback-card header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.wheel-feedback-card header h3{margin:0}.wheel-force-status{font-size:10px;letter-spacing:.06em;font-weight:800;padding:6px 8px;border-radius:3px;background:#e9e8e1;color:#66665d}
+.wheel-force-status.connected{background:#e3eee6;color:#326345}
+.wheel-feedback-intro{color:#737368;font-size:13px;line-height:1.6;margin:12px 0 18px}
+.wheel-force-devices{margin:0 0 16px;border-top:1px solid #d8d6cd;border-bottom:1px solid #d8d6cd;padding:10px 0;display:grid;gap:5px}
+.wheel-force-devices dt{font-size:11px;color:#747468;margin-top:5px}.wheel-force-devices dd{font-size:12px;line-height:1.5;margin:0;overflow-wrap:anywhere;font-weight:700}
+#wheelForceConnect{width:100%;font-size:12px;min-height:44px;padding:10px}
+.wheel-feedback-card .setting-toggle{margin:16px 0}.wheel-feedback-card .setting-toggle small{max-width:220px}
+.wheel-feedback-card .setting-slider{margin:16px 0}.wheel-feedback-card .setting-slider input{width:100%}
+.wheel-force-reverse{display:flex;align-items:center;gap:9px;font-size:13px;color:#57574e;margin:14px 0}
+.wheel-force-actions{display:flex;gap:8px}.wheel-force-actions button{flex:1;min-height:42px;padding:8px;font-size:12px}
+#wheelForceStop{color:#a61d17;border-color:#c8aaa4}#wheelForceHelp{font-size:12px;line-height:1.6;color:#656559;min-height:57px;margin:12px 0}
+.wheel-force-compat{border-top:1px solid #d8d6cd;padding-top:12px;font-size:12px;line-height:1.6;color:#66665c}
+.wheel-force-compat summary{cursor:pointer;font-weight:700;color:#35352e;padding:4px 0}.wheel-force-compat p{margin:10px 0}
+#webhidInspect{min-height:40px;font-size:12px}#webhidReport{max-height:200px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.wheel-device-row{display:flex;align-items:center;gap:8px}.wheel-device-row select{min-width:0;flex:1;width:100%;min-height:44px;border:1px solid #bdbdb4;border-radius:4px;background:#fff;padding:8px 10px;font:12px Arial,sans-serif;text-overflow:ellipsis}.wheel-device-row button{min-height:44px;border:1px solid #bdbdb4;border-radius:4px;background:#fff;color:#25251e;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer}
+.wheel-device-row button:hover,.wheel-mapping-row button.detecting{background:#fff8c9;border-color:#c5a719}.wheel-device-row button.detecting{background:#ffe12e;border-color:#b39913}.wheel-mapping-row button.detecting{outline:2px solid #c5a719;outline-offset:2px}
+.wheel-detection-status{font-size:12px;color:#656559;min-height:18px}.wheel-detection-status.detecting{color:#8b4b00;font-weight:700}
+@media(max-width:900px){.wheel-setup-grid{grid-template-columns:1fr}.wheel-feedback-card{padding:18px}.wheel-feedback-card .setting-toggle small{max-width:none}}
+@media(max-width:520px){#menuDialog .wheel-device-row select{font-size:16px}}
+
+.wheel-g29-test{margin:14px 0}.wheel-g29-test label,#wheelG29Setup label{display:block;font-size:12px;font-weight:700;margin-bottom:7px}
+.wheel-g29-test select,#wheelG29Range{width:100%;min-width:0;min-height:44px;font:inherit;border:1px solid var(--ui-border,#bdbdb4);border-radius:4px;background:#fff;padding:9px 40px 9px 12px}
+.wheel-g29-test p,#wheelG29Setup p{font-size:12px;line-height:1.5;color:#656559}
+.wheel-g29-range{display:flex;gap:8px;margin:8px 0 12px}.wheel-g29-range select{flex:1;width:0}#wheelG29ApplyRange{flex-shrink:0}#wheelG29LEDs{width:100%;min-height:44px}
+@media(max-width:520px){.wheel-g29-test select,#wheelG29Range{font-size:16px}}

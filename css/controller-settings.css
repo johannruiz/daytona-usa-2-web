@@ -1,0 +1,132 @@
+/* One bounded settings shell for every category, including the wheel setup. */
+#menuDialog.launcher-content:has(#settingsModal:not([hidden])) {
+  width:min(1100px,100%);height:min(760px,calc(100dvh - 36px));max-width:none;margin-block:0;
+}
+.launcher:has(#settingsModal:not([hidden])) {padding:18px;align-items:center;}
+#settingsModal {height:100%;display:flex;flex-direction:column;padding:22px 26px 16px;text-align:left;}
+#settingsModal .settings-header {flex-shrink:0;margin-bottom:14px;}
+#settingsModal .settings-tabs {flex-shrink:0;margin-bottom:16px;}
+#settingsModal .settings-panel {flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:5px;}
+#settingsModal .settings-footer {flex-shrink:0;margin-top:12px;padding-top:10px;}
+#settingsModal #controllerPanel {overflow:hidden;padding-right:0;}
+#controllerControls {height:100%;min-height:0;display:flex;flex-direction:column;gap:14px;}
+.controller-device-bar {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center;flex-shrink:0;}
+.controller-device-bar label,.controller-axis-row>label {display:block;font-size:11px;font-weight:700;color:#5c5c53;margin-bottom:4px;}
+.controller-device-bar select,.controller-axis-row select {display:block;width:100%;max-width:100%;min-height:40px;padding:8px 30px 8px 10px;font:inherit;font-size:12px;color:#20201c;background:#fff;border:1px solid #babbb1;border-radius:4px;text-overflow:ellipsis;}
+.controller-connection {font-size:11px;color:#777;max-width:190px;line-height:1.5;}
+.controller-connection[data-connected=true] {color:#38644b;}
+.controller-connection::before {content:'●';font-size:9px;margin-right:7px;}
+.controller-workspace {display:grid;grid-template-columns:minmax(245px,.85fr) minmax(0,1.4fr);gap:16px;flex:1;min-height:0;}
+.controller-preview,.controller-binding-panel {border:1px solid #cecec5;border-radius:6px;background:#ffffff80;padding:14px;min-width:0;min-height:0;}
+.controller-preview {display:flex;flex-direction:column;overflow:auto;}
+.controller-binding-panel {display:flex;flex-direction:column;overflow:hidden;}
+.controller-card-heading {display:flex;justify-content:space-between;align-items:center;gap:8px;flex-shrink:0;margin-bottom:10px;}
+.controller-card-heading h3 {margin:0;font-size:13px;color:#222;}
+.controller-card-heading>span {font-size:10px;color:#777;}
+.controller-vector {width:100%;height:auto;max-height:225px;flex-shrink:0;overflow:visible;margin:2px auto 0;}
+.controller-vector .pad-body {fill:#eeede6;stroke:#8a8a7e;stroke-width:2;}
+.controller-vector circle,.controller-vector rect,.controller-vector .pad-dpad>path {fill:#fafaf7;stroke:#97978d;stroke-width:1.7;}
+.controller-vector text {font:bold 11px Arial,sans-serif;text-anchor:middle;fill:#626255;pointer-events:none;}
+.controller-vector .pad-stick>circle:first-child {fill:#e0e0d7;}
+.controller-vector .pad-stick-cap {fill:#f8f8f4;}
+.controller-vector .pressed>circle,.controller-vector .pressed>rect {fill:#ffe12e;stroke:#b13a19;stroke-width:2.4;}
+.controller-vector .pressed text {fill:#222;}
+.controller-vector .pad-triggers g>rect {fill:color-mix(in srgb,#ffe12e calc(var(--pressure,0)*100%),#fafaf7);}
+.controller-vector .pad-dpad circle {fill:transparent;stroke:none;}
+.controller-vector .pad-dpad .pressed>circle {fill:#ffe12e;stroke:#b13a19;}
+.controller-input-caption {font-size:11px;line-height:1.45;color:#606056;min-height:32px;margin:5px 0 10px;overflow-wrap:anywhere;}
+.controller-meters {display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:10px;}
+.controller-meters label {font-size:10px;font-weight:700;color:#55554b;}
+.controller-meters output {display:block;font-size:12px;font-variant-numeric:tabular-nums;color:#24241e;margin:4px 0;}
+.controller-meters meter {display:block;width:100%;height:9px;accent-color:#a40000;}
+.controller-preview-note {font-size:10px;line-height:1.55;color:#77776b;margin:14px 0 0;}
+.controller-edit-tabs {display:flex;gap:5px;border-bottom:1px solid #d5d5cd;padding-bottom:8px;margin-bottom:10px;flex-shrink:0;}
+.controller-edit-tabs button {font-size:12px;padding:8px 12px;border:1px solid transparent;border-radius:4px;background:transparent;color:#666;font-weight:700;}
+.controller-edit-tabs button[aria-selected=true] {color:#171717;background:#ffe12e;border-color:#d1b209;}
+#controllerButtonsPage,#controllerFeelPage {min-height:0;overflow:auto;scrollbar-gutter:stable;flex:1;}
+.controller-reset {font-size:11px;color:#8d1717;background:transparent;border:0;padding:5px;min-height:30px;}
+.controller-mapping-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:18px;row-gap:3px;}
+.controller-map-row {display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:32px;border-bottom:1px solid #e0e0d7;min-width:0;}
+.controller-map-row>span {font-size:11px;font-weight:700;}
+.controller-map-row button {max-width:140px;min-width:76px;min-height:28px;padding:5px 8px;font-size:11px;color:#333;background:#fff;border:1px solid #c6c6bd;border-radius:4px;}
+.controller-map-row button:hover {border-color:#ad1717;color:#8d1717;}
+.controller-map-row button.is-listening {background:#fff3a1;border-color:#a51a1a;color:#821313;}
+.controller-assignment-status {display:flex;align-items:center;gap:10px;min-height:44px;margin-top:8px;}
+.controller-assignment-status p {font-size:11px;line-height:1.5;color:#68685e;margin:0;flex:1;}
+.controller-assignment-status button {border:1px solid #bcbcb1;background:#fff;color:#333;border-radius:4px;font-size:11px;min-height:32px;}
+.controller-axis-row {display:flex;align-items:end;gap:12px;margin-bottom:12px;}
+.controller-axis-row>label:first-child {flex:1;}
+.controller-axis-row .controller-invert {display:flex;align-items:center;gap:6px;min-height:40px;margin:0;font-size:11px;}
+#controllerFeelContent .setting-toggle {padding:9px 10px;margin:0 0 10px;min-height:42px;}
+#controllerFeelContent .setting-toggle small {font-size:10px;}
+#controllerFeelContent .setting-slider {margin:8px 0;padding:0;}
+#controllerFeelContent .setting-slider>div {margin-bottom:3px;}
+#controllerFeelContent .setting-slider label,#controllerFeelContent .setting-slider output {font-size:11px;}
+#controllerFeelContent .setting-slider p {font-size:10px;line-height:1.4;margin:3px 0 8px;}
+#controllerFeelContent .device-status {font-size:10px;margin:5px 0;}
+#controllerFeelContent {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px;}
+#controllerFeelContent .controller-axis-row {grid-column:1/-1;order:0;margin:0;}
+#controllerFeelContent .setting-slider:has(#joystickSensitivity),#controllerFeelContent .setting-slider:has(#joystickDeadzone) {order:1;}
+#controllerFeelContent .setting-toggle {grid-column:1/-1;order:2;margin:0;}
+#controllerFeelContent .setting-slider {order:3;margin:0;}
+#controllerFeelContent .device-status {grid-column:1/-1;order:4;}
+#controllerControls button:focus-visible,#controllerControls select:focus-visible {outline:3px solid #b60000;outline-offset:2px;}
+.connection-diagnostics-tools {display:flex;align-items:center;flex-wrap:wrap;gap:8px 18px;border:1px solid #d5d5cb;border-radius:4px;background:#ffffff70;padding:10px 14px;margin:0 0 12px;}
+.connection-diagnostics-toggle {display:flex;align-items:center;gap:9px;font-size:12px;font-weight:700;cursor:pointer;}
+.connection-diagnostics-toggle small {display:block;font-size:10px;color:#6e6e62;font-weight:400;margin-top:3px;}
+.connection-local-tools {display:flex;align-items:center;gap:14px;margin-left:auto;font-size:11px;}
+.connection-local-tools label {display:flex;align-items:center;gap:5px;}
+.connection-local-tools button {min-height:32px;font-size:11px;}
+#roomDiagnosticsStatus {flex-basis:100%;font-size:10px;line-height:1.4;color:#77786b;margin:0;min-height:14px;}
+#menuDialog.host-console-view {height:min(840px,calc(100dvh - 36px));margin-block:0;}
+.launcher:has(#hostConsole:not([hidden])) {padding:18px;align-items:center;}
+.connection-console {height:100%;display:flex;flex-direction:column;min-height:0;}
+.connection-console>.connection-header,.connection-console>.connection-summary,.connection-console>.connection-diagnostics-tools,.connection-console>.connection-incident,.connection-console>.connection-tabs,.connection-console>.connection-footer {flex-shrink:0;}
+.connection-console>[role=tabpanel] {flex:1;min-height:0;display:flex;flex-direction:column;}
+.connection-console .connection-scroll {flex:1;min-height:0;height:auto;max-height:none;}
+.connection-console .connection-help {flex-shrink:0;}
+@media(max-width:800px) {
+ #settingsModal {padding:18px 16px 12px;}
+ #settingsModal #controllerPanel {overflow:auto;scrollbar-gutter:stable;}
+ #controllerControls {height:auto;min-height:100%;gap:12px;}
+ .controller-device-bar {grid-template-columns:minmax(0,1fr);gap:5px;}
+ .controller-connection {max-width:none;}
+ .controller-workspace {display:block;flex:none;}
+ .controller-preview {margin-bottom:12px;}
+ .controller-vector {max-height:170px;}
+ .controller-preview-note {margin-top:8px;}
+ .controller-binding-panel {overflow:visible;}
+ #controllerButtonsPage,#controllerFeelPage {overflow:visible;}
+ .controller-mapping-grid {column-gap:10px;}
+ .controller-map-row {gap:4px;}
+ .controller-map-row button {min-width:60px;max-width:96px;font-size:10px;}
+ .controller-map-row>span {font-size:10px;}
+ .controller-local-tools {margin-left:0;}
+}
+@media(max-width:430px) {
+ .launcher:has(#settingsModal:not([hidden])) {padding:12px;}
+ #menuDialog.launcher-content:has(#settingsModal:not([hidden])) {height:calc(100dvh - 24px);}
+ #settingsModal .settings-tabs {margin-bottom:12px;}
+ .controller-device-bar select {font-size:11px;}
+ .controller-card-heading>span {font-size:9px;}
+ .controller-mapping-grid {grid-template-columns:minmax(0,1fr);}
+ .controller-map-row {min-height:44px;}
+ .controller-map-row button {min-height:38px;}
+ .connection-local-tools {margin-left:0;flex-wrap:wrap;}
+}
+@media(max-height:520px) {
+ #settingsModal {padding-block:10px;}
+ #settingsModal .settings-header,#settingsModal .settings-tabs {margin-bottom:6px;}
+ #settingsModal .settings-header h1 {font-size:20px;}
+ #settingsModal .settings-footer {margin-top:6px;padding-top:4px;}
+}
+
+/* Short touch screens need one usable scroll surface, rather than two
+   controller panes reduced to a few pixels by the fixed desktop shell. */
+@media(orientation:landscape) and (max-height:520px){
+ html.mobile-gestures #settingsModal #controllerPanel{overflow:auto;padding-right:5px}
+ html.mobile-gestures #controllerControls{height:auto;min-height:100%}
+ html.mobile-gestures .controller-workspace{flex:none;min-height:360px;height:auto;align-items:stretch}
+ html.mobile-gestures :is(.controller-preview,.controller-binding-panel){overflow:visible}
+ html.mobile-gestures :is(#controllerButtonsPage,#controllerFeelPage){overflow:visible;flex:none}
+}

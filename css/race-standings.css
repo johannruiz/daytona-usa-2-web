@@ -1,0 +1,15 @@
+@font-face{font-family:DaytonaHUD;src:url('../fonts/VT323-Regular.ttf') format('truetype');font-weight:400;font-display:swap}
+.race-network-hud{position:fixed;left:max(16px,env(safe-area-inset-left));top:max(14px,env(safe-area-inset-top));z-index:2;max-width:min(350px,45vw);pointer-events:none;user-select:none;-webkit-user-select:none}
+.race-network-hud .network-status{position:static;max-width:100%;width:max-content}
+.launcher-open .race-network-hud{display:none}
+.race-standings{list-style:none;padding:0;margin:8px 0 0;display:grid;gap:0;pointer-events:none;font:400 clamp(19px,1.8vw,27px)/1.08 DaytonaHUD,'Lucida Console',monospace;letter-spacing:.02em;white-space:nowrap;filter:drop-shadow(1px 2px 0 #0008)}
+.race-driver{display:grid;grid-template-columns:3.1ch minmax(0,1fr);column-gap:.5ch;color:var(--driver-color);-webkit-text-stroke:2px var(--driver-outline);paint-order:stroke fill;text-shadow:1px 1px 0 #000}
+.race-place{font-size:.78em;align-self:center;text-align:right;font-variant-numeric:tabular-nums;padding-right:.15ch}
+.race-name{overflow:hidden;text-overflow:ellipsis;min-width:0}
+@media(max-width:600px){.race-network-hud{left:max(10px,env(safe-area-inset-left));top:max(10px,env(safe-area-inset-top));max-width:min(260px,52vw)}.race-standings{font-size:20px;margin-top:6px}.race-driver{-webkit-text-stroke:1.7px var(--driver-outline)}}
+@media(max-width:1100px){.touch-device .race-network-hud{top:calc(max(12px,env(safe-area-inset-top)) + 50px);max-width:min(280px,43vw)}}
+@media(orientation:landscape) and (max-height:500px){.race-standings{font-size:18px;line-height:1.02}.race-network-hud{max-width:min(280px,38vw)}}
+
+.race-order-status{display:block;margin-top:5px;color:#ffed70;font:400 clamp(13px,1.1vw,17px)/1.1 DaytonaHUD,monospace;letter-spacing:.03em;text-shadow:1px 1px #000,0 0 3px #000}.race-order-status[hidden]{display:none}
+
+.race-driver[data-unavailable="true"] .race-name{opacity:.5}

@@ -1,0 +1,10 @@
+/* Daytona USA 2 additions to the Daytona USA Web interface (css/). */
+/* The WebGPU renderer lays out the widescreen / 4:3 picture itself in canvas pixels. */
+#screen { object-fit: fill; image-rendering: auto; }
+/* Logo image supplied by the user (img/daytona-usa-2-logo.png, 2026-11-12); sizes come from css/style.css (.game-logo img). */
+.game-logo img { display: block; height: auto; }
+.room-players .seat-cabinet { font-variant-numeric: tabular-nums; opacity: .7; margin-left: auto; }
+.touch-controls [hidden] { display: none !important; }
+
+/* In-game controls (menu, sound, fullscreen) shown for 2.2 s after the pointer moves, as in Daytona USA Web. */
+.playing.hud-visible .arcade-tools { opacity: 1; }

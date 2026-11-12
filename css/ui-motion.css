@@ -1,0 +1,22 @@
+/* Brief, event-driven menu feedback. No game canvas, chat-log or frame loop. */
+@keyframes ui-shell-in{from{opacity:.6}to{opacity:1}}
+@keyframes ui-panel-in{from{opacity:.65}to{opacity:1}}
+@keyframes ui-action-in{from{opacity:.65;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:no-preference){
+ #menuDialog.launcher-content{animation:ui-shell-in 180ms ease-out backwards}
+ #menuDialog :is(#singlePlayerPanel,#multiplayerEntry,#roomPanel,#settingsModal,#hostConsole):not([hidden]),
+ #menuDialog dialog[open],#menuDialog #inviteBlock:popover-open,
+ #menuDialog .race-settings-page:not([hidden]),#menuDialog .settings-panel:not([hidden]){animation:ui-panel-in 150ms ease-out backwards}
+ #menuDialog #playerModes:not([hidden])>.launch-btn{animation:ui-action-in 170ms cubic-bezier(.2,.7,.3,1) backwards}
+ #menuDialog .ui-button{transition:background-color 130ms ease-out,border-color 130ms ease-out,box-shadow 130ms ease-out,color 130ms ease-out}
+ #menuDialog .driver-card{transition:background-color 130ms ease-out,border-color 130ms ease-out}
+ #menuDialog .ui-back-icon{transition:transform 130ms ease-out}
+ #menuDialog .ui-back:hover:enabled .ui-back-icon{transform:translateX(-2px)}
+}
+@media(prefers-reduced-motion:reduce){
+ #menuDialog.launcher-content,#menuDialog :is(#singlePlayerPanel,#multiplayerEntry,#roomPanel,#settingsModal,#hostConsole),
+ #menuDialog dialog,#menuDialog #inviteBlock,#menuDialog .race-settings-page,#menuDialog .settings-panel,
+ #menuDialog #playerModes>.launch-btn{animation:none!important}
+ #menuDialog .ui-button,#menuDialog .driver-card,#menuDialog .ui-back-icon{transition:none!important}
+ #menuDialog .ui-back-icon{transform:none!important}
+}

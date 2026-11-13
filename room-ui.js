@@ -15,7 +15,7 @@ import { createLobbyNotifications } from './d1/lobby-notifications.js';
 import { SEATS, parseInvitation } from './room.js';
 
 const $ = id => document.getElementById(id);
-const SETTING_IDS = { mode: 'roomMode', difficulty: 'roomDifficulty', voice: 'roomVoice', lapsBeginner: 'roomLapsBeginner', lapsAdvanced: 'roomLapsAdvanced', lapsExpert: 'roomLapsExpert', playerCollision: 'roomCollision' };
+const SETTING_IDS = { mode: 'roomMode', difficulty: 'roomDifficulty', voice: 'roomVoice', lapsBeginner: 'roomLapsBeginner', lapsAdvanced: 'roomLapsAdvanced', lapsExpert: 'roomLapsExpert', playerCollision: 'roomCollision', cpuCars: 'roomCpuCars' };
 export const invitationFromURL = href => new URLSearchParams(new URL(href).hash.slice(1)).get('room') || '';
 
 export function createRoomUI(room, { show, gameRunning = () => false, unlockAudio = () => {}, sound = () => {}, onEntry = () => {} }) {

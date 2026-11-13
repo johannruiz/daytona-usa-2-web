@@ -1,6 +1,6 @@
 # Daytona USA 2 Power Edition — Web
 
-Version 0.9.2
+Version 0.9.3
 
 A static recompilation of the arcade game *Daytona USA 2 Power Edition* (Sega Model 3, 1998), running in the browser with WebAssembly and WebGPU. Single player and online linked races for up to 16 drivers.
 
@@ -44,6 +44,8 @@ The `.nojekyll` file must stay so that every file is served as is. Any other sta
 ## Multiplayer
 
 Create a private room and share its code. Up to 16 cabinets can race, and the host starts the race and sets the options.
+
+**CPU cars** can be turned off for a race with real players only, in single player (the arcade’s Time Lap) and in rooms.
 
 Cabinets connect directly to each other over WebRTC; the public PeerJS server is used only to find each other. A cabinet that stops responding is left out of the race and rejoins in the room for the next one.
 

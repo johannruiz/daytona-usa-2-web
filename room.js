@@ -12,8 +12,8 @@
 import { explainConnection } from './central-link-net.js';
 import { RaceOrder } from './race-order.js';
 export const SEATS = 16, CHAT_LIMIT = 240, CHAT_HISTORY = 60, CHAT_INTERVAL_MS = 900;
-export const DEFAULT_SETTINGS = Object.freeze({ mode: 0, difficulty: 1, voice: 0, lapsBeginner: 8, lapsAdvanced: 4, lapsExpert: 2, playerCollision: 1 });
-const SETTING_RANGES = { mode: [0, 6], difficulty: [0, 3], voice: [0, 1], lapsBeginner: [8, 16], lapsAdvanced: [4, 12], lapsExpert: [2, 8], playerCollision: [0, 1] };
+export const DEFAULT_SETTINGS = Object.freeze({ mode: 0, difficulty: 1, voice: 0, lapsBeginner: 8, lapsAdvanced: 4, lapsExpert: 2, playerCollision: 1, cpuCars: 1 });
+const SETTING_RANGES = { mode: [0, 6], difficulty: [0, 3], voice: [0, 1], lapsBeginner: [8, 16], lapsAdvanced: [4, 12], lapsExpert: [2, 8], playerCollision: [0, 1], cpuCars: [0, 1] };
 const cleanRoomName = v => String(v || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 48);
 const token = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('');
 const cleanName = v => String(v || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 24) || 'Driver';

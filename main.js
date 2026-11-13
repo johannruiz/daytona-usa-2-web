@@ -372,12 +372,13 @@ function onField(h) {
 }
 
 // ---- single player (race setup = the original TEST menu options) -----------
-const RACE_FIELDS = { mode: 'singleMode', difficulty: 'singleDifficulty', voice: 'singleVoice', lapsBeginner: 'singleLapsBeginner', lapsAdvanced: 'singleLapsAdvanced', lapsExpert: 'singleLapsExpert' };
+const RACE_FIELDS = { mode: 'singleMode', difficulty: 'singleDifficulty', voice: 'singleVoice', lapsBeginner: 'singleLapsBeginner', lapsAdvanced: 'singleLapsAdvanced', lapsExpert: 'singleLapsExpert', cpuCars: 'singleCpuCars' };
 for (const sel of document.querySelectorAll('[data-laps]')) { const [lo, hi] = sel.dataset.laps.split('-').map(Number); for (let n = lo; n <= hi; n++) sel.add(new Option(`${n} laps`, String(n))); }
 let appliedRace = null;
 async function storedRace() {
   const saved = JSON.parse(storage.getItem(RACE_ID) || 'null');
-  return saved || raceOptions(await loadStored('cabinet'));
+  // cpuCars is not an arcade setting (no NVRAM byte): On unless chosen (web/real_players.py).
+  return { cpuCars: 1, ...(saved || raceOptions(await loadStored('cabinet'))) };
 }
 function formRace() { const r = {}; for (const [k, id] of Object.entries(RACE_FIELDS)) r[k] = Number($(id).value); return r; }
 const sameRace = (a, b) => !!a && !!b && Object.keys(RACE_FIELDS).every(k => a[k] === b[k]);
@@ -403,7 +404,8 @@ $('singleRaceForm').addEventListener('submit', e => {
 });
 async function startSingle() {
   const race = await storedRace(); appliedRace = race; sessionKind = 'single'; nvramName = 'cabinet';
-  await startEngine({ backup: makeBackup(await loadStored('cabinet'), { link: 0, race }) });
+  // CPU cars off: the original Time Lap request (Start held at AT/MT SELECT); on: the original controls.
+  await startEngine({ backup: makeBackup(await loadStored('cabinet'), { link: 0, race }), env: race.cpuCars === 0 ? { DAYTO_REAL_PLAYERS: '1' } : {} });
 }
 
 // ---- multiplayer: private rooms (room.js, room-ui.js, Daytona USA Web chat) ----
@@ -487,7 +489,7 @@ $('leaveRoom').addEventListener('click', () => {
   room.leave(); history.replaceState(history.state, '', location.pathname + location.search); view('entry');
 });
 $('returnRoomGame').addEventListener('click', () => resumeGame());
-$('stopRoom').addEventListener('click', () => { if (confirm('Return every cabinet to the room? The current game ends for everyone.')) room.stopRace(); });
+$('stopRoom').addEventListener('click', () => room.stopRace());   // no browser confirmation (user, 2026-11-13)
 if (new URLSearchParams(location.hash.slice(1)).get('room')) $('joinCode').dispatchEvent(new Event('input'));
 async function startLinked({ nodes, node, car, race }) {
   sessionKind = 'link'; nvramName = 'cabinet-link';
@@ -499,6 +501,8 @@ async function startLinked({ nodes, node, car, race }) {
     // Asynchronous central link with remote-car playout (?link=lockstep restores the barrier).
     DAYTO_CENTRAL_ASYNC: params.get('link') === 'lockstep' ? '0' : '1', DAYTO_CENTRAL_PREDICT: params.get('predict') === '0' ? '0' : '1', DAYTO_CENTRAL_SMOOTH: params.get('smooth') === '0' ? '0' : '1', ...(params.has('gamelead') ? { DAYTO_CENTRAL_GAMELEAD: String(Math.round(Number(params.get('gamelead')) * 10) || 0) } : {}), ...(params.has('heading') ? { DAYTO_CENTRAL_HEADING: params.get('heading') === '0' ? '0' : '1' } : {}), ...(params.has('pipelead') ? { DAYTO_CENTRAL_PIPELEAD: String(Math.round(Number(params.get('pipelead')) * 10) | 0) } : {}), ...(params.has('inverse') ? { DAYTO_CENTRAL_INVERSE: params.get('inverse') === '0' ? '0' : '1' } : {}), ...(params.has('percar') ? { DAYTO_CENTRAL_PERCAR: params.get('percar') === '0' ? '0' : '1' } : {}), ...(params.has('snapjumps') ? { DAYTO_CENTRAL_SNAPJUMPS: params.get('snapjumps') === '1' ? '1' : '0' } : {}), ...(params.has('leadcap') ? { DAYTO_CENTRAL_LEADCAP: String(Number(params.get('leadcap')) | 0) } : {}), ...(params.has('leaddown') ? { DAYTO_CENTRAL_LEADDOWN: String(Math.round(Number(params.get('leaddown')) * 100) | 0) } : {}), ...(params.has('leadrate') ? { DAYTO_CENTRAL_LEADRATE: String(Math.round(Number(params.get('leadrate')) * 100) | 0) } : {}),
     // Room option: player collision off gates the car-pair contact of two human cars (web/native/contact_gate.c).
-    DAYTO_PLAYER_COLLISION: race.playerCollision === 0 ? '0' : '1' } });
+    DAYTO_PLAYER_COLLISION: race.playerCollision === 0 ? '0' : '1',
+    // Room option: CPU cars off asks the game for a humans-only race at AT/MT SELECT on every cabinet; on, a held Start cannot (web/real_players.py).
+    DAYTO_REAL_PLAYERS: race.cpuCars === 0 ? '1' : '0' } });
   room.changed();
 }

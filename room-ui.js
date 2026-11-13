@@ -5,6 +5,9 @@
 // code), the shared race settings (D2's mode, difficulty, announcer and laps),
 // the lobby chat with unread badges and mobile ROOM / CHAT tabs, and the
 // in-race arrival toasts. Public rooms are not part of this port yet.
+// Room notices (2026-11-12, user: as Daytona USA Web): main.js feeds announce()
+// from d1/room-arrivals.js, so every cabinet sees who joined, left or stopped;
+// the lobby footer shows the latest one, the race shows the toast.
 import { mountRoomInvitation } from './d1/room-invitation.js';
 import { createChatFollow } from './d1/chat-follow.js';
 import { carColor } from './d1/car-colors.js';
@@ -15,7 +18,7 @@ const $ = id => document.getElementById(id);
 const SETTING_IDS = { mode: 'roomMode', difficulty: 'roomDifficulty', voice: 'roomVoice', lapsBeginner: 'roomLapsBeginner', lapsAdvanced: 'roomLapsAdvanced', lapsExpert: 'roomLapsExpert', playerCollision: 'roomCollision' };
 export const invitationFromURL = href => new URLSearchParams(new URL(href).hash.slice(1)).get('room') || '';
 
-export function createRoomUI(room, { show, gameRunning = () => false, unlockAudio = () => {}, sound = () => {} }) {
+export function createRoomUI(room, { show, gameRunning = () => false, unlockAudio = () => {}, sound = () => {}, onEntry = () => {} }) {
   const panel = $('roomPanel');
   const invitationMenu = mountRoomInvitation({ container: $('roomInvite'), trigger: $('inviteRoom'), content: $('inviteBlock'), closeButton: $('closeInvite'), initialFocus: $('copyRoom') });
   const notifications = createLobbyNotifications({ notifyChat: () => sound('chat'), notifyReady: () => sound('ready'), notifyConfirmed: () => sound('confirmed') });
@@ -42,8 +45,8 @@ export function createRoomUI(room, { show, gameRunning = () => false, unlockAudi
     try { await fn(); } catch (e) { $('entryStatus').textContent = e.message; if (room.phase === 'error' || room.phase === 'idle') show('entry'); }
     finally { busy = false; $('createRoom').disabled = $('joinRoom').disabled = false; }
   };
-  $('createRoom').onclick = entryAction(async () => { void unlockAudio(); rememberName(); show('room'); await room.create(driverName(), { roomName: $('publicRoomName')?.value || '' }); setURL(room.code); });
-  $('joinRoom').onclick = entryAction(async () => { void unlockAudio(); rememberName(); const code = parseInvitation($('joinCode').value); setURL(code); show('room'); await room.join(code, driverName()); });
+  $('createRoom').onclick = entryAction(async () => { onEntry(); void unlockAudio(); rememberName(); show('room'); await room.create(driverName(), { roomName: $('publicRoomName')?.value || '' }); setURL(room.code); });
+  $('joinRoom').onclick = entryAction(async () => { onEntry(); void unlockAudio(); rememberName(); const code = parseInvitation($('joinCode').value); setURL(code); show('room'); await room.join(code, driverName()); });
 
   // ---- room actions -------------------------------------------------------------
   const action = fn => async () => { try { await fn(); } catch (e) { $('roomMessage').textContent = e.message; } };
@@ -189,29 +192,73 @@ export function createRoomUI(room, { show, gameRunning = () => false, unlockAudi
   $('pendingJump').onclick = () => $('pendingList').querySelector('button:not(:disabled)')?.focus();
 
   // ---- arrival toasts in the race (D1 waiting-toast markup) -----------------------
-  function toast(event) {
-    if (!gameRunning() || !['joined', 'request', 'left', 'stalled'].includes(event.kind)) return;
-    const root = $('waitingToast'), title = document.createElement('strong'), detail = document.createElement('span');
-    title.textContent = event.name + { request: ' requested to join', joined: ' joined the room', left: ' left the room', stalled: ' stopped responding' }[event.kind];
-    detail.textContent = event.kind === 'left' ? 'Driver disconnected' : event.kind === 'stalled' ? 'Out of this race · back in the room for the next one' : 'The race is running. New drivers join a new room.';
-    root.replaceChildren(title, detail); root.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { root.hidden = true; }, 5500);
+  const NOTICE = {
+    joined: e => [`${e.name} joined the room`, e.cabinet ? `Car ${e.cabinet} · ready to join the grid` : 'Driver · ready to join the grid', 'in'],
+    request: e => [`${e.name} asked to join`, e.inGame ? 'Review the request when you return to the lobby.' : 'Admit or decline the request in the grid.', 'in'],
+    waiting: e => [`${e.name} is waiting`, 'Seat kept for the next race', 'in'],
+    left: e => [`${e.name} left the room`, e.inGame ? 'Driver disconnected · their car stays on track, pass-through' : 'Driver disconnected · their seat is free', 'out'],
+    stalled: e => [`${e.name} stopped responding`, 'Out of this race · back in the room for the next one', 'out'],
+    offline: () => ['Invitation service reconnecting', 'Drivers already in the room stay connected. New invitations wait until it is back.', 'warn'],
+    online: () => ['Invitation service connected', 'New drivers can join with the invitation again.', 'in'],
+    'connect-failed': e => [`${e.name} could not connect`, 'They found the room, but their network and yours could not open a direct connection (no TURN relay yet). They can try another network or turn off a VPN.', 'warn'],
+  };
+  function toast(title, detail) {
+    if (!gameRunning()) return;
+    const root = $('waitingToast'), t = document.createElement('strong'), d = document.createElement('span');
+    t.textContent = title; d.textContent = detail;
+    root.replaceChildren(t, d); root.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { root.hidden = true; }, 5500);
   }
+  // Lobby notices: the latest room events, kept 10 s each (newest first, up to 3).
+  // They float just under the menu window (user, 2026-11-12: inside the footer
+  // they resized it), aligned with it; with no room below, at the screen's
+  // bottom edge. Only while the room is shown in the menu.
+  const noticeLines = [];
+  function placeNotices() {
+    const root = $('roomNotice');
+    if (root.hidden) return;
+    const shown = !$('overlay').hidden && !panel.hidden;
+    root.style.visibility = shown ? '' : 'hidden';
+    if (!shown) return;
+    const win = document.querySelector('#mainMenu > .rom-modal') || $('menuDialog'), r = win.getBoundingClientRect(), gap = 10;   // the visible window, not the support block under it
+    root.style.left = `${Math.round(r.left)}px`; root.style.width = `${Math.round(r.width)}px`;
+    root.style.top = `${Math.round(Math.max(gap, Math.min(r.bottom + gap, innerHeight - root.offsetHeight - gap)))}px`;
+  }
+  addEventListener('resize', placeNotices);
+  $('overlay').addEventListener('scroll', placeNotices, { passive: true });
+  if (globalThis.ResizeObserver) new ResizeObserver(placeNotices).observe(document.querySelector('#mainMenu > .rom-modal') || $('menuDialog'));
+  function footerNotice(title, detail, tone) {
+    const root = $('roomNotice'), now = Date.now();
+    noticeLines.unshift({ title, detail, tone, until: now + 10000 }); noticeLines.length = Math.min(noticeLines.length, 3);
+    const draw = () => {
+      const live = noticeLines.filter(n => n.until > Date.now()); noticeLines.length = 0; noticeLines.push(...live);
+      root.replaceChildren(...live.map(n => { const p = document.createElement('p'), b = document.createElement('strong'); p.dataset.tone = n.tone; b.textContent = n.title; p.append(b, document.createTextNode(' · ' + n.detail)); return p; }));
+      root.hidden = !live.length; placeNotices(); clearTimeout(root.timer); if (live.length) root.timer = setTimeout(draw, Math.max(50, Math.min(...live.map(n => n.until)) - Date.now()));
+    };
+    draw();
+  }
+  function announce(e) {
+    const make = NOTICE[e.kind]; if (!make) return;
+    const [title, detail, tone] = make(e);
+    footerNotice(title, detail, tone); toast(title, detail);
+  }
+  let lastSignaling = true;
 
   return {
     markChatRead: markRead,
-    event(e) {
-      if (e.kind === 'request') sound('request'); else if (e.kind === 'joined' || e.kind === 'admitted') sound('arrival'); else if (e.kind === 'left' || e.kind === 'stalled') sound('departure');
-      toast(e);
-    },
+    // Room transport events (room.js): the other drivers' arrivals and departures
+    // come from announce() (snapshots, every cabinet); here only this cabinet's admission.
+    event(e) { if (e.kind === 'admitted') sound('arrival'); if (e.kind === 'connect-failed') announce(e); },
+    announce,
     render(state) {
-      notifications.update(state);
+      notifications.update(state); placeNotices();
       const key = state.host || state.id || 'idle';
       if (key !== roomKey) {
         invitationMenu.close(); roomKey = key; pendingStamp = ''; lastChatSeq = 0; lastAckCommand = 0; lastSeatAck = 0; previousSeat = null;
         $('seatStatus').textContent = ''; messages.clear(); $('chatLog').replaceChildren(); chatFollow.reset(); cards.clear(); emptySeats.clear();
         $('playersList').replaceChildren(); $('chatInput').value = ''; $('chatLength').textContent = '0/240'; markRead(); mobileTab('grid');
       }
-      if (state.phase === 'idle') { invitationMenu.setAvailable(false); return; }
+      if (state.phase === 'idle') { invitationMenu.setAvailable(false); noticeLines.length = 0; $('roomNotice').hidden = true; lastSignaling = true; return; }
+      if (['lobby', 'playing', 'waiting'].includes(state.phase) && state.signaling !== lastSignaling) { lastSignaling = state.signaling; announce({ kind: state.signaling ? 'online' : 'offline' }); }
       panel.classList.toggle('guest-room', !state.isHost); panel.classList.toggle('has-requests', state.isHost && state.pending.length > 0); panel.dataset.phase = state.phase;
       const out = state.phase === 'playing' && state.members.find(m => m.id === state.id)?.connection === 'stalled';
       $('roomTitle').textContent = out ? 'Out of this race' : state.phase === 'waiting' ? 'Waiting for the next race' : state.phase === 'pending' ? 'Request sent' : state.phase === 'error' ? 'Room unavailable' : state.roomName || (state.isHost ? 'Your starting grid' : 'Your race room');
@@ -233,7 +280,7 @@ export function createRoomUI(room, { show, gameRunning = () => false, unlockAudi
       $('leaveRoomLabel').textContent = state.phase === 'playing' ? 'Leave game' : state.phase === 'error' ? 'Back to rooms' : 'Leave room';
       const notReady = state.members.filter(m => !m.ready).length;
       const lobby = state.pending.length ? 'Review the requests to complete your grid.' : state.members.length < 2 ? 'Invite at least one friend: a linked race needs two cabinets.' : notReady ? `${notReady} ${notReady === 1 ? 'driver is' : 'drivers are'} not ready yet.` : state.isHost ? 'Your grid is ready. Start when you are.' : 'Your grid is ready. Waiting for the host.';
-      const labels = { connecting: 'Connecting to the room…', pending: 'Your host will admit you shortly.', lobby, playing: out ? 'Your cabinet stopped responding, so the race went on without it. Wait here: you take your seat again when the host returns everyone to the room.' : 'The race keeps running while this menu is open.', error: state.error || 'Try another invitation.' };
+      const labels = { connecting: { signaling: 'Contacting the invitation service…', contacting: 'Looking for the room…', direct: 'Room found. Opening a direct connection to the host…' }[state.stage] || 'Connecting to the room…', pending: 'Your host will admit you shortly.', lobby, playing: out ? 'Your cabinet stopped responding, so the race went on without it. Wait here: you take your seat again when the host returns everyone to the room.' : 'The race keeps running while this menu is open.', error: state.error || 'Try another invitation.' };
       $('roomMessage').textContent = labels[state.phase] || '';
       $('roomConnection').textContent = state.phase === 'connecting' ? 'Connecting…' : state.phase === 'error' ? 'Disconnected' : state.signaling ? '● Room connected' : 'Room connected · invitation service reconnecting';
       $('roomConnection').dataset.state = state.phase === 'error' ? 'offline' : state.signaling ? 'connected' : 'recovering';

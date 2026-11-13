@@ -31,6 +31,8 @@ import { mountGameChat } from './d1/game-chat.js';
 import { mountHostConsole } from './host-console.js';
 import { mountRaceStandings } from './race-standings.js';
 import { createLobbySound } from './d1/lobby-sound.js';
+import { createRoomArrivals } from './d1/room-arrivals.js';
+import { createRoomSystemAlerts } from './d1/room-system-alerts.js';
 
 const $ = id => document.getElementById(id);
 const html = document.documentElement;
@@ -195,7 +197,16 @@ async function resumeGame() {
 $('closeBtn').addEventListener('click', () => resumeGame());
 $('menuBtn').addEventListener('click', () => openMenu());
 $('fullscreenBtn').addEventListener('click', () => document.fullscreenElement ? document.exitFullscreen?.() : html.requestFullscreen?.());
-function toggleSound() { audio.setMuted(!audio.muted); $('soundBtn').setAttribute('aria-label', audio.muted ? 'Unmute sound' : 'Mute sound'); $('touchControls').querySelector('[data-sound]')?.setAttribute('aria-pressed', String(audio.muted)); }
+// Sound buttons (corner and touch): the icon shows the state, as in Daytona USA Web (2026-11-12).
+function updateSoundControls() {
+  const label = audio.muted ? 'Unmute sound' : 'Mute sound';
+  for (const b of [$('soundBtn'), $('touchControls').querySelector('[data-sound]')]) {
+    if (!b) continue;
+    b.setAttribute('aria-label', label); b.title = label; b.setAttribute('aria-pressed', String(audio.muted));
+    b.textContent = audio.muted ? '♪̸' : '♫';
+  }
+}
+function toggleSound() { audio.setMuted(!audio.muted); updateSoundControls(); }
 $('soundBtn').addEventListener('click', toggleSound);
 // In-game controls: shown while the pointer moves, hidden 2.2 s after (as Daytona USA Web).
 let hudTimer;
@@ -305,7 +316,7 @@ async function startEngine({ backup, env = {} }) {
   preparing = true; if ($('restartNotice').hidden) restartNotice({ view: sessionKind === 'link' ? 'prepare-link' : 'prepare-single' });
   $('overlay').hidden = true; html.classList.remove('launcher-open'); html.classList.add('playing');
   try { await audio.start(); } catch (e) { console.warn('[audio]', e); }
-  $('soundBtn').disabled = false;
+  $('soundBtn').disabled = false; updateSoundControls();
   const cpuTile = params.has('cputile');   // debug: 2D layers composed in WASM instead of WebGPU compute
   try { renderer = await Daytona2Renderer.create($('screen'), './shaders/', { gpuTilegen: !cpuTile }); }
   catch (e) { preparing = false; restartNotice(null); throw e; }
@@ -318,7 +329,9 @@ async function startEngine({ backup, env = {} }) {
   renderer.device.addEventListener('uncapturederror', e => console.error('[webgpu]', e.error.message));
   try { host.module.FS.mkdir('/save'); } catch {}
   host.writeFile(BACKUP, backup);
-  host.start({ M3_BACKUP: BACKUP, ...env, ...(params.get('profile') ? { DAYTO_VIDEO_PROFILE: '1' } : {}), ...(cpuTile ? { DAYTO_WEB_CPU_TILEGEN: '1' } : {}), ...(params.get('motion') ? { DAYTO_MOTION_TRACKING: '1' } : {}), ...(params.get('xform') === '0' ? { DAYTO_GPU_XFORM: '0' } : {}), ...(fieldHz60 ? { M3_SOUND_FIELD_US: '16667' } : {}) });
+  // ?devroms=1&denv=NAME=VALUE,... : extra engine variables for local diagnostics only.
+  const devEnv = params.has('devroms') && params.get('denv') ? Object.fromEntries(params.get('denv').split(',').map(kv => kv.split('=')).filter(kv => /^(DAYTO|M3)_[A-Z0-9_]+$/.test(kv[0]))) : {};
+  host.start({ M3_BACKUP: BACKUP, ...env, ...devEnv, ...(params.get('profile') ? { DAYTO_VIDEO_PROFILE: '1' } : {}), ...(cpuTile ? { DAYTO_WEB_CPU_TILEGEN: '1' } : {}), ...(params.get('motion') ? { DAYTO_MOTION_TRACKING: '1' } : {}), ...(params.get('xform') === '0' ? { DAYTO_GPU_XFORM: '0' } : {}), ...(fieldHz60 ? { M3_SOUND_FIELD_US: '16667' } : {}) });
   setInterval(requestSave, 30000);
   document.addEventListener('visibilitychange', () => { if (document.hidden) requestSave(); });
   // As Daytona USA Web's pause notice: a hidden tab slows this cabinet while the
@@ -397,8 +410,19 @@ async function startSingle() {
 // The host cabinet is the room authority and the central link MASTER (node 0).
 const lobbySound = createLobbySound({ context: () => audio.context, output: uiOutput, muted: () => audio.muted || settings.uiVolume === 0 });
 $('previewUISound').addEventListener('click', async () => { try { await audio.start(); } catch {} lobbySound('confirmed'); });
+// Room notices for every cabinet (user, 2026-11-12, as Daytona USA Web):
+// d1/room-arrivals.js reads the room snapshots; each arrival, request (host),
+// departure or stalled driver shows in the lobby footer or as the race toast,
+// plays its lobby sound and, while this page is in the background, raises a
+// system notification (d1/room-system-alerts.js, room-alerts-sw.js).
+const roomAlerts = createRoomSystemAlerts({ onClick: () => { openMenu(); if (room.phase === 'lobby' && !$('pendingJump').hidden) $('pendingJump').click(); } });
+const roomArrivals = createRoomArrivals({ notify: e => {
+  roomUI?.announce(e);
+  lobbySound(e.kind === 'request' ? 'request' : e.kind === 'left' || e.kind === 'stalled' ? 'departure' : 'arrival');
+  void roomAlerts.show(e);
+} });
 const room = new PrivateRoom(link, {
-  onChange: state => { roomUI?.render(state); gameChat?.sync(state); hostConsole?.render(state); linkLostNotice(state); outOfRaceCheck(state); },
+  onChange: state => { roomAlerts.sync(state); roomUI?.render(state); roomArrivals.update(state); gameChat?.sync(state); hostConsole?.render(state); linkLostNotice(state); outOfRaceCheck(state); },
   onEvent: event => roomUI?.event(event),
   onStart: session => void startLinked(session),
   // The host returned everyone to the room: every cabinet restarts its page
@@ -422,6 +446,7 @@ function linkLostNotice(state) {
   clearTimeout(n.hideTimer); n.textContent = state.error; n.hidden = false;
 }
 function backToRoom() {
+  roomArrivals.mute();   // the other cabinets restart too: their departures are not news
   const resume = room.resumeState(); if (!resume) { restartWith({ view: 'entry' }); return; }
   try { sessionStorage.setItem(RESUME, JSON.stringify(resume)); } catch {}
   try { link.peer?.destroy(); } catch {}
@@ -445,7 +470,7 @@ const standings = mountRaceStandings($('raceStandings'));
 room.onOrder = order => standings.update(order, room.members, sessionKind === 'link' && !!link.racing);
 const hostConsole = mountHostConsole(room, { link, open: () => { $('mainMenu').hidden = true; $('overlay').scrollTop = 0; }, close: () => { $('mainMenu').hidden = false; } });
 const unlockAudio = async () => { try { await audio.start(); } catch {} };
-const roomUI = createRoomUI(room, { show: view, gameRunning: () => started && sessionKind === 'link', unlockAudio, sound: kind => lobbySound(kind) });
+const roomUI = createRoomUI(room, { show: view, gameRunning: () => started && sessionKind === 'link', unlockAudio, sound: kind => lobbySound(kind), onEntry: () => void roomAlerts.enable() });
 const gameChat = mountGameChat($('gameChat'), { room, storage, gameShown: () => started && running && $('overlay').hidden,
   notify: () => lobbySound('chat'), onRead: () => roomUI.markChatRead(), onTyping: () => { held.clear(); keyboardControls.reset(); },
   returnFocus: () => $('screen').focus({ preventScroll: true }) });
@@ -472,7 +497,7 @@ async function startLinked({ nodes, node, car, race }) {
   setTimeout(() => { $('networkStatus').hidden = true; }, 6000);
   await startEngine({ backup, env: { DAYTO_CENTRAL_NAME: 'web', DAYTO_CENTRAL_NODES: String(nodes), DAYTO_CENTRAL_NODE: String(node), DAYTO_CENTRAL_DELAY: String(link.delay), DAYTO_CENTRAL_TIMEOUT_MS: '8000',
     // Asynchronous central link with remote-car playout (?link=lockstep restores the barrier).
-    DAYTO_CENTRAL_ASYNC: params.get('link') === 'lockstep' ? '0' : '1', DAYTO_CENTRAL_PREDICT: params.get('predict') === '0' ? '0' : '1',
+    DAYTO_CENTRAL_ASYNC: params.get('link') === 'lockstep' ? '0' : '1', DAYTO_CENTRAL_PREDICT: params.get('predict') === '0' ? '0' : '1', DAYTO_CENTRAL_SMOOTH: params.get('smooth') === '0' ? '0' : '1', ...(params.has('gamelead') ? { DAYTO_CENTRAL_GAMELEAD: String(Math.round(Number(params.get('gamelead')) * 10) || 0) } : {}), ...(params.has('heading') ? { DAYTO_CENTRAL_HEADING: params.get('heading') === '0' ? '0' : '1' } : {}), ...(params.has('pipelead') ? { DAYTO_CENTRAL_PIPELEAD: String(Math.round(Number(params.get('pipelead')) * 10) | 0) } : {}), ...(params.has('inverse') ? { DAYTO_CENTRAL_INVERSE: params.get('inverse') === '0' ? '0' : '1' } : {}), ...(params.has('percar') ? { DAYTO_CENTRAL_PERCAR: params.get('percar') === '0' ? '0' : '1' } : {}), ...(params.has('snapjumps') ? { DAYTO_CENTRAL_SNAPJUMPS: params.get('snapjumps') === '1' ? '1' : '0' } : {}), ...(params.has('leadcap') ? { DAYTO_CENTRAL_LEADCAP: String(Number(params.get('leadcap')) | 0) } : {}), ...(params.has('leaddown') ? { DAYTO_CENTRAL_LEADDOWN: String(Math.round(Number(params.get('leaddown')) * 100) | 0) } : {}), ...(params.has('leadrate') ? { DAYTO_CENTRAL_LEADRATE: String(Math.round(Number(params.get('leadrate')) * 100) | 0) } : {}),
     // Room option: player collision off gates the car-pair contact of two human cars (web/native/contact_gate.c).
     DAYTO_PLAYER_COLLISION: race.playerCollision === 0 ? '0' : '1' } });
   room.changed();

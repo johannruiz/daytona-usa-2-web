@@ -8,3 +8,13 @@
 
 /* In-game controls (menu, sound, fullscreen) shown for 2.2 s after the pointer moves, as in Daytona USA Web. */
 .playing.hud-visible .arcade-tools { opacity: 1; }
+/* Room notices (2026-11-12): the latest arrivals, departures and connection changes,
+   floating just under the menu window (placed by room-ui.js), above the overlay. */
+.room-notice{position:fixed;z-index:11;top:0;left:0;display:grid;gap:6px;margin:0;pointer-events:none;box-sizing:border-box}
+.room-notice[hidden]{display:none}
+.room-notice p{margin:0;padding:7px 11px;border:1px solid #c8c8bf;border-left:3px solid #4f8a55;border-radius:4px;background:#f7f6eef5;box-shadow:0 4px 16px #0004;color:#5e5e53;font:11px/1.45 Arial,Helvetica,sans-serif;animation:room-notice-in .18s ease-out}
+.room-notice p strong{color:#2b2b25;font-weight:600}
+.room-notice p[data-tone=out]{border-left-color:#b0412f}
+.room-notice p[data-tone=warn]{border-left-color:#c5ad59}
+@keyframes room-notice-in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.room-notice p{animation:none}}

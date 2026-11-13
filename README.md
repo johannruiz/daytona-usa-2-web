@@ -1,6 +1,6 @@
 # Daytona USA 2 Power Edition — Web
 
-Version 0.9.1
+Version 0.9.2
 
 A static recompilation of the arcade game *Daytona USA 2 Power Edition* (Sega Model 3, 1998), running in the browser with WebAssembly and WebGPU. Single player and online linked races for up to 16 drivers.
 

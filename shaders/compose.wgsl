@@ -39,7 +39,11 @@ const SIZE_X = 496.0; const BACK_MARGIN = 200.0; const BACK_X = 896.0;
   q.x = clamp(q.x, 0.5 / SIZE_X, 1.0 - 0.5 / SIZE_X);
   let inside_43 = p.x >= pc.layer2d.x && p.x <= pc.layer2d.x + pc.layer2d.y;
   let back_s = textureSampleLevel(back_tex, nearest, qb, 0.0);
-  let fill_s = textureSampleLevel(back_tex, nearest, edge, 0.0);   // clamp to edge: the nearest column
+  // Gap fill of framed pictures: the picture's own edge column inside the 4:3
+  // area (2026-11-12). Sampling the texture edge read the empty margin of a
+  // layer that is not extended (title screen), leaving the sides black.
+  let edge_in = vec2<f32>(clamp(edge.x, (BACK_MARGIN + 0.5) / BACK_X, (BACK_MARGIN + SIZE_X - 0.5) / BACK_X), q.y);
+  let fill_s = textureSampleLevel(back_tex, nearest, edge_in, 0.0);
   let front_s = textureSampleLevel(front_tex, nearest, q, 0.0);
   if (p.x >= 0.0 && p.y >= 0.0 && p.x <= 1.0 && p.y <= 1.0) {
     var back = vec4<f32>(0.0);

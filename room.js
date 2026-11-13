@@ -9,6 +9,7 @@
 // shared race settings into its EEPROM before the engine boots.
 // The engine runs once per page, so the room stays in 'playing' after the
 // start: races continue in the original attract/coin cycle on the same link.
+import { explainConnection } from './central-link-net.js';
 import { RaceOrder } from './race-order.js';
 export const SEATS = 16, CHAT_LIMIT = 240, CHAT_HISTORY = 60, CHAT_INTERVAL_MS = 900;
 export const DEFAULT_SETTINGS = Object.freeze({ mode: 0, difficulty: 1, voice: 0, lapsBeginner: 8, lapsAdvanced: 4, lapsExpert: 2, playerCollision: 1 });
@@ -37,6 +38,9 @@ export class PrivateRoom {
     link.onMessage = (d, c) => this.message(d, c);
     link.onFailure = reason => this.fail(reason);
     link.onSignaling = up => { this.signaling = up; this.changed(); };
+    // Joining progress and failures in words (2026-11-12): see explainConnection.
+    link.onStage = stage => { this.stage = stage; this.changed(); };
+    link.onConnectFailed = e => this.onEvent({ kind: 'connect-failed', name: cleanName(e.name), inGame: this.phase === 'playing' });
     link.onSession = session => this.started(session);
     // Chat pauses while a cabinet races, as in Daytona USA Web (src/comm/central_link.c reports the phase).
     link.onRacing = on => this.racePhase(on);
@@ -54,6 +58,7 @@ export class PrivateRoom {
     this.members = []; this.pending = []; this.chat = []; this.settings = { ...DEFAULT_SETTINGS };
     this.peers = new Map(); this.seq = 0; this.lastChat = 0; this.command = 0; this.lastAck = null;
     this.readyPending = false; this.seatPending = 0; this.signaling = true; this.name = 'Driver'; this.refusal = '';
+    this.stage = ''; this.answered = false; clearTimeout(this.answerTimer);
     this.roomName = ''; this.token = ''; this.reserved = []; this.swaps = []; this.waiters = [];   // swaps: seat-swap offers (30 s, as Daytona USA Web)   // reserved: seats kept for drivers returning after a restart
   }
   get id() { return this.link.id; }
@@ -63,7 +68,7 @@ export class PrivateRoom {
     return { phase: this.phase, id: this.id, host: this.hostId, isHost: this.isHost, code: this.code, error: this.error,
       members: this.members.map(m => ({ ...m })), pending: this.pending.map(m => ({ ...m })), chat: this.chat.slice(),
       settings: { ...this.settings }, lastAck: this.lastAck, readyPending: this.readyPending, seatPending: this.seatPending,
-      signaling: this.signaling, chatAvailable: this.active, visibility: 'private', roomName: this.roomName,
+      signaling: this.signaling, chatAvailable: this.active, visibility: 'private', roomName: this.roomName, stage: this.stage,
       reserved: this.reserved.map(r => ({ name: r.name, cabinet: r.cabinet })), swaps: this.swaps.map(o => ({ ...o })), waiters: this.waiters.map(w => ({ id: w.id, name: w.name })) };
   }
   changed() { this.onChange(this.snapshot()); }
@@ -90,7 +95,7 @@ export class PrivateRoom {
   async create(name, { roomName = '', restore = null } = {}) {
     this.leave(); this.name = cleanName(name); this.roomName = cleanRoomName(roomName || restore?.roomName); this.phase = 'connecting'; this.changed();
     try { this.code = await this.link.host(restore?.code); }
-    catch (e) { this.fail('Could not open the room: ' + (e?.type || e?.message || e)); throw new Error(this.error); }
+    catch (e) { this.fail(explainConnection(e?.type || e?.message, 'host')); throw new Error(this.error); }
     this.isHost = true; this.hostId = this.id; this.phase = 'lobby';
     const me = restore?.members?.find(m => m.self);
     this.members = [{ id: this.id, name: this.name, cabinet: me?.cabinet || 1, ready: false, connection: 'connected', rtt: null }];
@@ -106,8 +111,8 @@ export class PrivateRoom {
   async join(invitation, name, resumeToken = '') {
     const code = parseInvitation(invitation);
     this.leave(); this.name = cleanName(name); this.code = code; this.hostId = 'd2pe-' + code; this.phase = 'connecting'; this.token = resumeToken; this.changed();
-    try { await this.link.join(code); }
-    catch (e) { this.fail('Could not reach the room: ' + (e?.type || e?.message || e)); throw new Error(this.error); }
+    try { await this.link.join(code, this.name); }
+    catch (e) { this.fail(explainConnection(e?.type || e?.message)); throw new Error(this.error); }
   }
   // What a page restart needs to bring this cabinet back into the same room.
   resumeState() {
@@ -132,7 +137,12 @@ export class PrivateRoom {
 
   // ---- transport -----------------------------------------------------------------
   connected(c) {
-    if (!this.isHost) { this.send(c, { t: 'hello', name: this.name, token: this.token || undefined }); this.phase = 'pending'; this.changed(); return; }
+    if (!this.isHost) {
+      if (this.phase !== 'connecting') { try { c.close(); } catch {} return; }   // opened after a failure was already explained
+      this.send(c, { t: 'hello', name: this.name, token: this.token || undefined }); this.phase = 'pending'; this.stage = ''; this.changed();
+      clearTimeout(this.answerTimer); this.answerTimer = setTimeout(() => { if (!this.answered && this.phase === 'pending') this.fail(explainConnection('no-room-answer')); }, 15000);
+      return;
+    }
     this.peers.set(c, { id: c.peer, name: '', state: 'new' });
   }
   disconnected(c) {
@@ -194,6 +204,7 @@ export class PrivateRoom {
   message(d, c) {
     if (!d || typeof d !== 'object') return;
     if (this.isHost) return this.command_(d, c);
+    this.answered = true;
     if (d.t === 'ping') { this.send(c, { t: 'pong', ts: d.ts }); return; }
     if (d.t === 'refused') { this.refusal = d.reason; this.fail(d.reason); try { c.close(); } catch {} return; }
     if (d.t === 'welcome') { this.token = String(d.token || ''); return; }
@@ -241,7 +252,7 @@ export class PrivateRoom {
     else if (d.t === 'swap-answer') { const reason = this.settleSwap(member, d.from, !!d.accept); this.ack(c, 'swap-answer', !reason, reason); this.publish(); }
     else if (d.t === 'swap-cancel') { this.swaps = this.swaps.filter(o => o.from !== member.id); this.ack(c, 'swap-cancel', true); this.publish(); }
     else if (d.t === 'health') { if (d.health && typeof d.health === 'object') member.health = { ...d.health, receivedAt: Date.now() }; return; }
-    else if (d.t === 'phase') { member.racing = !!d.racing; this.publish(); }
+    else if (d.t === 'phase') { if (d.racing && !member.racing) this.newRace(); member.racing = !!d.racing; this.publish(); }
     else if (d.t === 'chat') { const reason = this.acceptChat(member, d.text); this.ack(c, 'chat-submit', !reason, reason); this.publish(); }
   }
 
@@ -336,7 +347,11 @@ export class PrivateRoom {
     this.publish();
   }
   chatAllowed(id) { return ['lobby', 'playing'].includes(this.phase) && this.members.some(m => m.id === id && !m.departed && !m.racing); }
+  // A cabinet starts racing: the previous race's order (final or not) must not
+  // show again, so the standings wait for this race's own order.
+  newRace() { this.order = null; this.raceOrder.order = null; this.raceOrder.lastKey = ''; }
   racePhase(on) {
+    if (on) this.newRace();
     if (this.isHost) { const me = this.members.find(m => m.id === this.id); if (me && me.racing !== on) { me.racing = on; this.publish(); } }
     else if (this.link.hostConn?.open) this.send(this.link.hostConn, { t: 'phase', racing: !!on });
     this.onOrder(this.order);   // the standings follow the race phase

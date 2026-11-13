@@ -236,17 +236,33 @@ export class Daytona2Renderer {
       uniform.set(vps.subarray(o + 32, o + 36), 24);   // ambient, density, start
       uniform[31] = 0; uniform[30] = v.full ? 2 * lay.gameX0 / lay.viewW : 0; uniform[29] = 1;   // quality.zw / aniso
       uniform.set(vps.subarray(o + 36, o + 52), 32);   // original light
+      // WebGPU rejects a viewport outside the target (the whole frame is then
+      // lost: black screens in 4:3 while MANUAL/AUTO panels slide in from
+      // off-screen, 2026-11-12). Draw into the visible part of the rectangle
+      // and fold the difference into the projection's x and y rows (before
+      // the shader's y flip both map the same way: -1 at the rectangle's
+      // left/top edge), so the picture keeps its place and size.
+      const view = [Math.max(0, rect[0]), Math.max(0, rect[1]), 0, 0];
+      view[2] = Math.min(rect[0] + rect[2], outW) - view[0]; view[3] = Math.min(rect[1] + rect[3], outH) - view[1];
+      if (view[2] < 0.5 || view[3] < 0.5 || !scissor[2] || !scissor[3]) continue;   // nothing of it on screen
+      if (Math.abs(view[2] - rect[2]) > 1e-3 || Math.abs(view[3] - rect[3]) > 1e-3 || view[0] !== rect[0] || view[1] !== rect[1]) {
+        for (const [row, at, size, inner] of [[0, rect[0], rect[2], view[0]], [1, rect[1], rect[3], view[1]]]) {
+          const vsize = row ? view[3] : view[2], k = size / vsize, off = (2 * (at - inner) + size - vsize) / vsize;
+          for (let j = 0; j < 4; j++) uniform[j * 4 + row] = k * uniform[j * 4 + row] + off * uniform[j * 4 + 3];
+          if (!row) uniform[30] *= k;   // HUD shift is added in clip x after the projection
+        }
+      }
       for (let pass = 0; pass < 2; pass++) {
         const count = pass ? v.tc : v.oc, first = pass ? v.tf : v.of;
         if (!count) continue;
         const base = uniform.slice(); base[28] = pass ? -1 : 1;
-        if (pass) { const d = uniform.slice(); d[28] = -1000; draws.push({ v, pass, kind: 'depth', u: d, first, count, rect, scissor }); }
-        draws.push({ v, pass, kind: pass ? 'trans' : 'opaque', u: base, first, count, rect, scissor });
+        if (pass) { const d = uniform.slice(); d[28] = -1000; draws.push({ v, pass, kind: 'depth', u: d, first, count, view, scissor }); }
+        draws.push({ v, pass, kind: pass ? 'trans' : 'opaque', u: base, first, count, view, scissor });
         if (!pass && v.checker > 0 && v.full && widen > 1 && this.flags?.menuFill) {   // checker mesh repeat
           const period = v.checker / widen, copies = Math.min(16, Math.ceil(2 / period));
           for (let r = 1; r <= copies; r++) for (const sign of [-1, 1]) {
             const rep = base.slice(); rep[8] += sign * r * period;
-            draws.push({ v, pass, kind: 'opaque', u: rep, first, count, rect, scissor });
+            draws.push({ v, pass, kind: 'opaque', u: rep, first, count, view, scissor });
           }
         }
       }
@@ -289,10 +305,7 @@ export class Daytona2Renderer {
         for (let j = i; j < draws.length && draws[j].v.priority === priority; j++) {
           const d = draws[j]; if (d.pass !== wanted) continue;
           pass.setPipeline(pipes[d.kind]);
-          const r = d.rect;
-          const vx = Math.max(0, r[0]), vy = Math.max(0, r[1]);
-          pass.setViewport(r[0] < 0 ? 0 : r[0], vy, Math.min(r[2], outW - vx), Math.min(r[3], outH - vy), 0, 1);
-          if (!d.scissor[2] || !d.scissor[3]) continue;
+          pass.setViewport(d.view[0], d.view[1], d.view[2], d.view[3], 0, 1);
           pass.setScissorRect(d.scissor[0], d.scissor[1], d.scissor[2], d.scissor[3]);
           pass.setBindGroup(1, this.drawGroup, [j * DRAW_STRIDE]);
           pass.draw(d.count, 1, d.first, 0);

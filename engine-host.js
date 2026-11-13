@@ -132,10 +132,18 @@ export class EngineHost {
     this.next += this.fieldMs;
     const now = performance.now();
     if (now - this.next > 250) this.next = now;
-    if (this.unpaced) { this.next = now; return new Promise(r => this.yieldNow(resolveAt(r))); }
+    if (this.unpaced) { this.next = now; this.earliest = -Infinity; return new Promise(r => this.yieldNow(resolveAt(r))); }
+    // Rate cap (2026-11-12): the field's ideal time on a virtual clock at the
+    // lock's own rate (else FIELD_MS), behind by at most 250 ms (catching up);
+    // no path may start it more than one step early. Without it, fields the
+    // timer ran during main-thread hitches were not taken from the refreshes
+    // the lock had counted, and a busy page ran 62-72 Hz (linked play, 64.5 Hz).
+    const step = this.locked(now) ? 1000 * this.lock.q / (this.lock.hz * this.lock.p) : this.fieldMs;
+    this.ideal = Math.max((this.ideal ?? now) + step, now - 250);
+    this.earliest = this.ideal - step;
     // Behind schedule: run the next field at once, but through a macrotask so the
     // page (input, rAF, network) is never starved by a chain of microtasks.
-    if (!this.paused && !this.drawPending(now) && !this.locked(now) && this.next <= now + 0.5) { this.immediate = (this.immediate || 0) + 1; return new Promise(r => this.yieldNow(resolveAt(r))); }
+    if (!this.paused && !this.drawPending(now) && !this.locked(now) && this.next <= now + 0.5 && this.earliest <= now + 0.5) { this.immediate = (this.immediate || 0) + 1; return new Promise(r => this.yieldNow(resolveAt(r))); }
     this.waits = (this.waits || 0) + 1;
     return new Promise(resolve => { this.waiter = resolveAt(resolve); this.schedule(); });
   }
@@ -209,7 +217,7 @@ export class EngineHost {
       // No catching up (as Supermodel): a field the engine could not start in
       // time is not run twice in a row later.
       if (L.due > 1) L.due = 1;
-      if (L.due && this.waiter) { L.due--; this.lockedFields++; this.next = now; const w = this.waiter; this.waiter = null; w(); }
+      if (L.due && this.waiter && now >= this.earliest) { L.due--; this.lockedFields++; this.next = now; const w = this.waiter; this.waiter = null; w(); }
     };
     raf(frame);
   }
@@ -223,6 +231,8 @@ export class EngineHost {
     const tick = () => {
       if (!this.waiter) return;
       if (this.paused) { this.arm(tick, 50); return; }
+      const early = this.earliest - performance.now();   // rate cap (nextField)
+      if (early > 0.5) { this.arm(tick, early); return; }
       // The previous field is still waiting for its refresh: this field starts
       // once it is drawn (or after 25 ms if refreshes stop).
       if (this.drawPending(performance.now())) { this.afterDraw = tick; this.arm(tick, 25); return; }
@@ -257,6 +267,21 @@ export class EngineHost {
   yieldNow(resolve) {
     if (!this.channel) { this.channel = new MessageChannel(); this.channel.port1.onmessage = () => { const q = this.queue; this.queue = []; q.forEach(f => f()); }; this.queue = []; }
     this.queue.push(resolve); this.channel.port2.postMessage(0);
+  }
+  // Page restart or exit (Claude 2026-11-12): Chrome keeps a page whose engine
+  // is suspended (JSPI) alive after a reload, WASM and JS heaps included (~1 GB
+  // per reload; linked play reloads between races). stop() ends the engine's
+  // stack: the pending suspension is woken and every later one rejects, so the
+  // exception unwinds out of the WASM.
+  stop() {
+    if (this.stopped || !this.module) return;
+    this.stopped = true;
+    const fail = () => Promise.reject(new Error('engine stopped'));
+    this.nextField = fail; this.mustWait = () => true;
+    if (this.link) { this.link.wait = fail; for (const w of this.link.waiters || []) { clearTimeout(w.timer); w.resolve(1); } this.link.waiters = []; }
+    clearTimeout(this.timer); this.afterDraw = null;
+    const w = this.waiter, q = this.queue || []; this.waiter = null; this.queue = [];
+    if (w) w(); q.forEach(f => f());
   }
   setPaused(paused) { this.paused = paused; if (!paused) this.next = performance.now(); }
   fps() {

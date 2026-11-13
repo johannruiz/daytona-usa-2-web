@@ -270,7 +270,7 @@ if (params.get('devroms')) devRoms().catch(e => { restartNotice(null); status(e.
 else engineReady.then(() => romMemory.restore()).catch(() => {}).finally(() => { if (!romReady) restartNotice(null); });
 
 // A new race setup or a switch between single and linked play reloads the page.
-function restartWith(intent) { try { sessionStorage.setItem(INTENT, JSON.stringify(intent)); } catch {} restartNotice(intent); requestSave(); setTimeout(() => location.reload(), 150); }
+function restartWith(intent) { try { sessionStorage.setItem(INTENT, JSON.stringify(intent)); } catch {} restartNotice(intent); requestSave(); setTimeout(() => { host?.stop(); setTimeout(() => location.reload(), 0); }, 150); }
 const RESTART_TEXT = {
   room: ['MULTIPLAYER', 'Returning to the room', 'Restarting this cabinet. Your seat is kept.'],
   entry: ['MULTIPLAYER', 'Leaving the room', 'Restarting this cabinet.'],
@@ -333,6 +333,7 @@ async function startEngine({ backup, env = {} }) {
     hiddenAt = 0;
   });
   addEventListener('pagehide', requestSave);
+  addEventListener('pagehide', e => { if (!e.persisted) host?.stop(); });   // reload or close: free the engine (EngineHost.stop)
 }
 // Saves happen inside the engine at the next field boundary (never re-entering a suspended stack).
 function requestSave() { if (host?.module?.daytonaHost && started) host.module.daytonaHost.saveRequested = true; }

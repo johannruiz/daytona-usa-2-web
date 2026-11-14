@@ -1,8 +1,9 @@
 // Player race positions over the game (Claude 2026-11-12): Daytona USA Web's
 // race-standings overlay (same markup and css/race-standings.css), fed by the
 // host's authoritative order (race-order.js) shared through the room.
-import { carColor } from './d1/car-colors.js';
-const ordinal = n => n == null ? '—' : `${n}${n === 1 ? 'ST' : n === 2 ? 'ND' : n === 3 ? 'RD' : 'TH'}`;
+import { carTag } from './car-tags.js';
+// Race position as P1, P2... (user, 2026-11-14; was 1ST, 2ND...).
+const ordinal = n => n == null ? '—' : `P${n}`;
 
 export function mountRaceStandings(element) {
   const nodes = new Map(), status = document.createElement('small');
@@ -22,10 +23,12 @@ export function mountRaceStandings(element) {
       rows.forEach((r, i) => {
         let node = nodes.get(r.node);
         if (!node) { node = document.createElement('li'); node.className = 'race-driver'; for (const cls of ['race-place', 'race-name']) { const span = document.createElement('span'); span.className = cls; node.append(span); } nodes.set(r.node, node); }
-        const color = carColor(r.member.cabinet);
-        node.style.setProperty('--driver-color', color.hudColor || color.color); node.style.setProperty('--driver-outline', '#070707');
+        // Colour of the game's tag over this car; 9-16 split it diagonally with grey (car-tags.js).
+        const tag = carTag(r.member.cabinet);
+        node.style.setProperty('--driver-color', tag.color); node.style.setProperty('--driver-outline', '#070707');
+        if (tag.split) { node.style.setProperty('--driver-split', tag.split); node.dataset.split = ''; } else { node.style.removeProperty('--driver-split'); delete node.dataset.split; }
         node.dataset.unavailable = String(!!r.member.departed);
-        node.children[0].textContent = ordinal(r.position); node.children[1].textContent = r.member.name;
+        node.children[0].textContent = node.children[0].dataset.text = ordinal(r.position); node.children[1].textContent = node.children[1].dataset.text = r.member.name;
         node.title = `${r.member.name} · Position ${r.position}`; node.setAttribute('aria-label', node.title);
         if (element.children[i] !== node) element.insertBefore(node, element.children[i] || null);
       });

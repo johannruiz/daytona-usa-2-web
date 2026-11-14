@@ -10,7 +10,7 @@
 // so speed never depends on the monitor's refresh rate.
 
 export const FIELD_MS = 17.385;
-// 60 Hz mode (?hz=60): the game runs at 60 fields/s, as Supermodel does by
+// 60 Hz mode (default; ?hz=57 for the arcade rate): the game runs at 60 fields/s, as Supermodel does by
 // default (RefreshRate = 60): 4.3% faster than the arcade, one field per
 // refresh on 60/120/240 Hz displays. The sound board keeps its real speed
 // (M3_SOUND_FIELD_US=16667: 735 samples a field), as Supermodel's own sound

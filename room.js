@@ -29,8 +29,8 @@ export function parseInvitation(value) {
 }
 
 export class PrivateRoom {
-  constructor(link, { onChange = () => {}, onEvent = () => {}, onStart = () => {}, onStop = () => {} } = {}) {
-    Object.assign(this, { link, onChange, onStart, onStop });
+  constructor(link, { onChange = () => {}, onEvent = () => {}, onStart = () => {}, onStop = () => {}, gamePhase = () => 0 } = {}) {
+    Object.assign(this, { link, onChange, onStart, onStop, gamePhase });
     this.onEvent = e => { this.logEvent(e.kind, e.name || ''); onEvent(e); };
     this.reset();
     link.onConnect = c => this.connected(c);
@@ -123,10 +123,11 @@ export class PrivateRoom {
     return this.token ? { role: 'guest', code: this.code, name: this.name, token: this.token, at: Date.now() } : null;
   }
   // Host: end the linked game for everyone and return to the room.
-  stopRace() {
+  // note: why, shown on every cabinet while it restarts (checkDropReturn).
+  stopRace(note = '') {
     if (!this.isHost || this.phase !== 'playing') return false;
-    for (const [c, info] of this.peers) if (info.state === 'member' || info.state === 'waiter') this.send(c, { t: 'stop' });
-    this.logEvent('race-stop', ''); this.onStop('host'); return true;
+    for (const [c, info] of this.peers) if (info.state === 'member' || info.state === 'waiter') this.send(c, { t: 'stop', note });
+    this.logEvent('race-stop', note); this.onStop('host', note); return true;
   }
   leave() {
     if (this.phase === 'idle') return;
@@ -188,8 +189,26 @@ export class PrivateRoom {
       this.publish();
     }
   }
+  // A cabinet lost outside a race sends everyone back to the room (user,
+  // 2026-11-14): the game cannot leave it out of a race once it has entered
+  // (shown as an attract cabinet, the master waited for it at course or car
+  // select for ever) and, driven by nobody, its car and CPU cars went off the
+  // track. Lost in course, car or transmission select or on the grid: at once.
+  // Lost mid-race: its cars stay where they were until the race ends, and
+  // everyone returns when the cabinets are back in attract. Phase from
+  // src/comm/central_link.c (dayto_central_game_phase): byte 4 the game phase
+  // (137-145 results), byte 211 1 while the cars race, byte 19 0 in attract.
+  checkDropReturn() {
+    if (!this.isHost || this.phase !== 'playing') return;
+    const gone = this.members.filter(m => m.departed); if (!gone.length) return;
+    const p = this.gamePhase() >>> 0; if (!(p & 0x1000000)) return;
+    const phase = p & 255, racing = (p >>> 8 & 255) === 1, attract = (p >>> 16 & 255) === 0;
+    if (racing || (!attract && phase >= 137)) return;   // the race, or its results
+    const names = gone.map(m => m.name).join(', ');
+    this.stopRace(attract ? `${names} left during the race. Everyone is back in the room for the next one.` : `${names} left before the start. Everyone is back in the room to start again.`);
+  }
   ping() {
-    this.checkStalled();
+    this.checkStalled(); this.checkDropReturn();
     if (this.isHost && this.swaps.some(o => o.until <= Date.now())) { this.swaps = this.swaps.filter(o => o.until > Date.now()); this.publish(); }
     if (this.isHost) for (const c of this.peers.keys()) this.send(c, { t: 'ping', ts: performance.now() });
     // Daytona USA Web's hot-departure policy: silence, ping, a stalled or hidden
@@ -208,7 +227,7 @@ export class PrivateRoom {
     if (d.t === 'ping') { this.send(c, { t: 'pong', ts: d.ts }); return; }
     if (d.t === 'refused') { this.refusal = d.reason; this.fail(d.reason); try { c.close(); } catch {} return; }
     if (d.t === 'welcome') { this.token = String(d.token || ''); return; }
-    if (d.t === 'stop') { this.onStop('guest'); return; }
+    if (d.t === 'stop') { this.onStop('guest', typeof d.note === 'string' ? d.note.slice(0, 200) : ''); return; }
     if (d.t === 'order') { this.order = d.order; this.onOrder(d.order); return; }
     if (d.t === 'sync') {
       const s = d.state, me = s.members.find(m => m.id === this.id);

@@ -14,7 +14,7 @@
 // (src/comm/central_motion.h). Control messages stay on the reliable channel.
 const RING = 32, SLOT = 848, PREFIX = 'd2pe-';
 const MAX_NODES = 16;   // Daytona USA 2 links 2-16 cabinets (CL_MAX_NODES in src/comm/central_link.c)
-const MOTION_LABEL = 'd2-motion-v1', MOTION_BUFFER_LIMIT = 16384, FIELD_HZ = 60;
+const MOTION_LABEL = 'd2-motion-v1', MOTION_BUFFER_LIMIT = 16384;
 // Test-only: this cabinet's own network is bad: ?netsim=delayMs,jitterMs,lossPercent
 // delays (and drops records) on everything it receives and sends, once per direction.
 const NETSIM = (() => { const m = /[?&]netsim=([\d.]+)(?:,([\d.]+))?(?:,([\d.]+))?/.exec(globalThis.location?.search || '');
@@ -63,6 +63,7 @@ export class CentralLinkNet {
   constructor() {
     this.isHost = false; this.peer = null; this.conns = []; this.hostConn = null;
     this.nodes = 0; this.node = 0; this.delay = 2;
+    this.fieldHz = 60;   // the engine's field rate (main.js sets it before each linked start)
     this.joinedState = Array(MAX_NODES).fill(0); this.isLinked = false;
     this.tags = [...Array(MAX_NODES)].map(() => new Float64Array(RING).fill(-1));
     this.blocks = [...Array(MAX_NODES)].map(() => [...Array(RING)].map(() => new Uint8Array(SLOT)));
@@ -183,7 +184,7 @@ export class CentralLinkNet {
   transitFields(j) {
     const half = n => (this.rtt[n] ?? 0) / 2;
     const ms = this.isHost ? half(j) : half(this.node) + (j ? half(j) : 0);
-    return ms * FIELD_HZ / 1000;
+    return ms * this.fieldHz / 1000;   // fieldHz: the engine's own rate (main.js; 57.524 by default since 2026-11-13)
   }
   // Share of node j's records that never reached this cabinet (0..1), or null.
   lossOf(j) {

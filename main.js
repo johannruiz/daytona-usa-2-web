@@ -47,8 +47,9 @@ const held = new Set();
 let outOfRace = false, preparing = false;   // preparing: the cabinet notice until the first field   // this cabinet left the linked race after stopping (outOfRaceCheck)
 let host, renderer, engineReady, started = false, running = false, romReady = false, sessionKind = null, nvramName = 'cabinet';
 // 60 Hz by default (user, 2026-11-12: smooth on every display, the same
-// for every player of a room); ?hz=57 runs the arcade's 57.524 Hz (remembered
-// for the tab), for comparison.
+// for every player of a room; tried 57.524 by default on 2026-11-13 and kept
+// 60 on 2026-11-14); ?hz=57 runs the arcade's 57.524 Hz (remembered for the
+// tab), with the link counting its real field length (DAYTO_CENTRAL_FIELD_US).
 const fieldHz60 = (() => { try { const q = params.get('hz'); if (q) sessionStorage.setItem('d2-hz', q); return sessionStorage.getItem('d2-hz') !== '57'; } catch { return true; } })();
 const audio = new AudioOutput(), link = new CentralLinkNet();
 const status = (t, ok = false) => { $('status').textContent = t; html.classList.toggle('ready', ok); };
@@ -295,7 +296,8 @@ function restartNotice(intent) {
   const n = $('restartNotice');
   if (!intent || intent.view === 'rom') { n.hidden = true; return; }
   const [eyebrow, title, text] = RESTART_TEXT[intent.from === 'single' ? 'multiplayer' : intent.view] || ['', 'Restarting the cabinet', 'One moment…'];
-  $('restartEyebrow').textContent = eyebrow; $('restartTitle').textContent = title; $('restartText').textContent = text; $('restartText').hidden = !text; n.hidden = false;
+  const detail = intent.note || text;   // note: why the host returned everyone (room.checkDropReturn)
+  $('restartEyebrow').textContent = eyebrow; $('restartTitle').textContent = title; $('restartText').textContent = detail; $('restartText').hidden = !detail; n.hidden = false;
 }
 // A restart in progress shows what is happening instead of the ROM screen while
 // the engine and the stored ROM load again (closed in continueIntent).
@@ -373,7 +375,8 @@ function onField(h) {
 
 // ---- single player (race setup = the original TEST menu options) -----------
 const RACE_FIELDS = { mode: 'singleMode', difficulty: 'singleDifficulty', voice: 'singleVoice', lapsBeginner: 'singleLapsBeginner', lapsAdvanced: 'singleLapsAdvanced', lapsExpert: 'singleLapsExpert', cpuCars: 'singleCpuCars' };
-for (const sel of document.querySelectorAll('[data-laps]')) { const [lo, hi] = sel.dataset.laps.split('-').map(Number); for (let n = lo; n <= hi; n++) sel.add(new Option(`${n} laps`, String(n))); }
+// Only this form's lap lists: room-ui.js fills the room's own (they were doubled, 2026-11-13).
+for (const sel of $('singleRaceForm').querySelectorAll('[data-laps]')) { const [lo, hi] = sel.dataset.laps.split('-').map(Number); for (let n = lo; n <= hi; n++) sel.add(new Option(`${n} laps`, String(n))); }
 let appliedRace = null;
 async function storedRace() {
   const saved = JSON.parse(storage.getItem(RACE_ID) || 'null');
@@ -429,7 +432,9 @@ const room = new PrivateRoom(link, {
   onStart: session => void startLinked(session),
   // The host returned everyone to the room: every cabinet restarts its page
   // (one engine per page) and comes back into the same room and seat.
-  onStop: () => backToRoom(),
+  onStop: (_, note) => backToRoom(note),
+  // Game phase for the room's drop rule (room.checkDropReturn, linked games only).
+  gamePhase: () => (started && sessionKind === 'link' && host?.module?._dayto_web_link_phase?.()) || 0,
 });
 // The host cabinet (link master) left during a linked game: say so over the
 // game, not only in the room menu, and keep it shown (the race cannot finish).
@@ -447,12 +452,12 @@ function linkLostNotice(state) {
   const n = $('networkStatus'); if (n.textContent === state.error && !n.hidden) return;
   clearTimeout(n.hideTimer); n.textContent = state.error; n.hidden = false;
 }
-function backToRoom() {
+function backToRoom(note = '') {
   roomArrivals.mute();   // the other cabinets restart too: their departures are not news
   const resume = room.resumeState(); if (!resume) { restartWith({ view: 'entry' }); return; }
   try { sessionStorage.setItem(RESUME, JSON.stringify(resume)); } catch {}
   try { link.peer?.destroy(); } catch {}
-  restartWith({ view: 'room' });
+  restartWith({ view: 'room', ...(note ? { note } : {}) });
 }
 // After a restart: reopen the room (host) or go back to the same seat (guest).
 async function resumeRoom() {
@@ -469,7 +474,18 @@ async function resumeRoom() {
 window.__d2room = room;   // debugging aid (automated lobby tests)
 room.health = () => ({ hz: started && host?.fps ? host.fps() : null, visible: !document.hidden });
 const standings = mountRaceStandings($('raceStandings'));
-room.onOrder = order => standings.update(order, room.members, sessionKind === 'link' && !!link.racing);
+// The standings stay from the start until the cabinet is back in attract
+// (user, 2026-11-14): link.racing ends as this car crosses the line (byte 211),
+// so the results after it follow the game phase (byte 4 >= 129: race, results;
+// byte 19 = 0: attract). Checked twice a second, as no order comes after FINAL.
+const standingsShown = () => {
+  if (sessionKind !== 'link') return false;
+  if (link.racing) return true;
+  const p = (started && host?.module?._dayto_web_link_phase?.()) >>> 0;
+  return !!(p & 0x1000000) && (p >>> 16 & 255) !== 0 && (p & 255) >= 129;
+};
+room.onOrder = order => standings.update(order, room.members, standingsShown());
+setInterval(() => { if (sessionKind === 'link') standings.update(room.order, room.members, standingsShown()); }, 500);
 const hostConsole = mountHostConsole(room, { link, open: () => { $('mainMenu').hidden = true; $('overlay').scrollTop = 0; }, close: () => { $('mainMenu').hidden = false; } });
 const unlockAudio = async () => { try { await audio.start(); } catch {} };
 const roomUI = createRoomUI(room, { show: view, gameRunning: () => started && sessionKind === 'link', unlockAudio, sound: kind => lobbySound(kind), onEntry: () => void roomAlerts.enable() });
@@ -497,7 +513,13 @@ async function startLinked({ nodes, node, car, race }) {
   const backup = makeBackup(previous, { link: node === 0 ? 1 : 2, car: car || node + 1, cabinet: 1, race });
   $('networkStatus').hidden = false; $('networkStatus').textContent = `Linked · car ${car || node + 1} · ${nodes} cabinets`;
   setTimeout(() => { $('networkStatus').hidden = true; }, 6000);
-  await startEngine({ backup, env: { DAYTO_CENTRAL_NAME: 'web', DAYTO_CENTRAL_NODES: String(nodes), DAYTO_CENTRAL_NODE: String(node), DAYTO_CENTRAL_DELAY: String(link.delay), DAYTO_CENTRAL_TIMEOUT_MS: '8000',
+  // The link's playout clock and prediction count in this engine's own fields
+  // (user, 2026-11-13: 57.524 Hz by default; at an assumed 60 the arrival
+  // offset grew 41 ms/s and read as jitter). ?linkfield=60 restores the old
+  // assumption (A/B).
+  const linkFieldUs = params.get('linkfield') === '60' ? 0 : fieldHz60 ? 16667 : 17385;
+  link.fieldHz = linkFieldUs ? 1e6 / linkFieldUs : 60;
+  await startEngine({ backup, env: { ...(linkFieldUs ? { DAYTO_CENTRAL_FIELD_US: String(linkFieldUs) } : {}), DAYTO_CENTRAL_NAME: 'web', DAYTO_CENTRAL_NODES: String(nodes), DAYTO_CENTRAL_NODE: String(node), DAYTO_CENTRAL_DELAY: String(link.delay), DAYTO_CENTRAL_TIMEOUT_MS: '8000',
     // Asynchronous central link with remote-car playout (?link=lockstep restores the barrier).
     DAYTO_CENTRAL_ASYNC: params.get('link') === 'lockstep' ? '0' : '1', DAYTO_CENTRAL_PREDICT: params.get('predict') === '0' ? '0' : '1', DAYTO_CENTRAL_SMOOTH: params.get('smooth') === '0' ? '0' : '1', ...(params.has('gamelead') ? { DAYTO_CENTRAL_GAMELEAD: String(Math.round(Number(params.get('gamelead')) * 10) || 0) } : {}), ...(params.has('heading') ? { DAYTO_CENTRAL_HEADING: params.get('heading') === '0' ? '0' : '1' } : {}), ...(params.has('pipelead') ? { DAYTO_CENTRAL_PIPELEAD: String(Math.round(Number(params.get('pipelead')) * 10) | 0) } : {}), ...(params.has('inverse') ? { DAYTO_CENTRAL_INVERSE: params.get('inverse') === '0' ? '0' : '1' } : {}), ...(params.has('percar') ? { DAYTO_CENTRAL_PERCAR: params.get('percar') === '0' ? '0' : '1' } : {}), ...(params.has('snapjumps') ? { DAYTO_CENTRAL_SNAPJUMPS: params.get('snapjumps') === '1' ? '1' : '0' } : {}), ...(params.has('leadcap') ? { DAYTO_CENTRAL_LEADCAP: String(Number(params.get('leadcap')) | 0) } : {}), ...(params.has('leaddown') ? { DAYTO_CENTRAL_LEADDOWN: String(Math.round(Number(params.get('leaddown')) * 100) | 0) } : {}), ...(params.has('leadrate') ? { DAYTO_CENTRAL_LEADRATE: String(Math.round(Number(params.get('leadrate')) * 100) | 0) } : {}),
     // Room option: player collision off gates the car-pair contact of two human cars (web/native/contact_gate.c).

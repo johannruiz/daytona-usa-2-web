@@ -13,3 +13,8 @@
 .race-order-status{display:block;margin-top:5px;color:#ffed70;font:400 clamp(13px,1.1vw,17px)/1.1 DaytonaHUD,monospace;letter-spacing:.03em;text-shadow:1px 1px #000,0 0 3px #000}.race-order-status[hidden]{display:none}
 
 .race-driver[data-unavailable="true"] .race-name{opacity:.5}
+
+/* Cars 9-16: the tag's diagonal split (car-tags.js). The text keeps its colour and outline;
+   a copy on top paints only the lower-right half grey, clipped to the glyph fill. */
+.race-driver[data-split]>span{position:relative}
+.race-driver[data-split]>span::after{content:attr(data-text);position:absolute;inset:0;padding-right:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:linear-gradient(135deg,transparent 50%,var(--driver-split) 50%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;-webkit-text-stroke:0;text-shadow:none;pointer-events:none}

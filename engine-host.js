@@ -208,7 +208,7 @@ export class EngineHost {
       if (this.pendingDraw) {
         this.pendingDraw = false; this.vsyncDraws++;
         this.renderer.render();
-        const f = this.afterDraw; this.afterDraw = null; if (f) f();
+        const f = this.afterDraw; this.afterDraw = null; if (f) this.yieldNow(f);   // after this frame is handed over
       }
       const L = this.lock;
       if (!L || this.paused || this.skipping || !this.displayRefreshing(now)) return;
@@ -217,7 +217,10 @@ export class EngineHost {
       // No catching up (as Supermodel): a field the engine could not start in
       // time is not run twice in a row later.
       if (L.due > 1) L.due = 1;
-      if (L.due && this.waiter && now >= this.earliest) { L.due--; this.lockedFields++; this.next = now; const w = this.waiter; this.waiter = null; w(); }
+      // The field starts in a task of its own (2026-11-14), not inside this refresh's
+      // rendering step: resuming the engine here (a microtask, 7-12 ms) held back the
+      // frame just drawn, so it reached the screen late at random (uneven cadence).
+      if (L.due && this.waiter && now >= this.earliest) { L.due--; this.lockedFields++; this.next = now; const w = this.waiter; this.waiter = null; this.yieldNow(w); }
     };
     raf(frame);
   }
@@ -255,7 +258,7 @@ export class EngineHost {
       // The last 2 ms are covered with macrotask polls: Windows timers wake
       // up to ~4 ms late, which made field delivery uneven.
       if (wait <= 2) { this.yieldNow(tick); return; }
-      if (wait > 6 && !this.rafPending) { this.rafPending = true; requestAnimationFrame(() => { this.rafPending = false; tick(); }); }
+      if (wait > 6 && !this.rafPending) { this.rafPending = true; requestAnimationFrame(() => { this.rafPending = false; this.yieldNow(tick); }); }
       this.arm(tick, wait - 2);
     };
     tick();

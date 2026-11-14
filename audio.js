@@ -10,6 +10,7 @@ export class AudioOutput {
     this.context = new AudioContext({ sampleRate: 44100, latencyHint: 'interactive' });
     await this.context.audioWorklet.addModule('./audio-worklet.js');
     this.node = new AudioWorkletNode(this.context, 'daytona2-audio', { outputChannelCount: [2] });
+    this.node.port.onmessage = e => { this.stats = e.data; };   // underruns, silent frames, queue level (audio-worklet.js)
     this.gain = this.context.createGain(); this.node.connect(this.gain).connect(this.context.destination);
     this.setVolume(this.volume);
   }

@@ -334,7 +334,7 @@ async function startEngine({ backup, env = {} }) {
   host.unpaced = params.has('unpaced'); host.burst = Number(params.get('burst') || 1);   // benchmark: run fields back to back
   if (params.has('noaudio')) host.module.daytonaHost.audio = () => {};
   if (params.has('norender')) host.renderer = null;
-  window.__d2 = { host, renderer, controls, room };   // debugging aid
+  window.__d2 = { host, renderer, controls, room, audio };   // debugging aid
   renderer.device.addEventListener('uncapturederror', e => console.error('[webgpu]', e.error.message));
   try { host.module.FS.mkdir('/save'); } catch {}
   host.writeFile(BACKUP, backup);

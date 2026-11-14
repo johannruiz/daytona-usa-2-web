@@ -4,7 +4,7 @@
 // join requests the host admits or declines, the invitation popover (link and
 // code), the shared race settings (D2's mode, difficulty, announcer and laps),
 // the lobby chat with unread badges and mobile ROOM / CHAT tabs, and the
-// in-race arrival toasts. Public rooms are not part of this port yet.
+// in-race arrival toasts. Public rooms use the same roster, chat and linked race.
 // Room notices (2026-11-12, user: as Daytona USA Web): main.js feeds announce()
 // from d1/room-arrivals.js, so every cabinet sees who joined, left or stopped;
 // the lobby footer shows the latest one, the race shows the toast.
@@ -18,7 +18,7 @@ const $ = id => document.getElementById(id);
 const SETTING_IDS = { mode: 'roomMode', difficulty: 'roomDifficulty', voice: 'roomVoice', lapsBeginner: 'roomLapsBeginner', lapsAdvanced: 'roomLapsAdvanced', lapsExpert: 'roomLapsExpert', playerCollision: 'roomCollision', cpuCars: 'roomCpuCars' };
 export const invitationFromURL = href => new URLSearchParams(new URL(href).hash.slice(1)).get('room') || '';
 
-export function createRoomUI(room, { show, gameRunning = () => false, unlockAudio = () => {}, sound = () => {}, onEntry = () => {} }) {
+export function createRoomUI(room, { show, gameRunning = () => false, unlockAudio = () => {}, sound = () => {}, onEntry = () => {}, preparePublic = async () => {} }) {
   const panel = $('roomPanel');
   const invitationMenu = mountRoomInvitation({ container: $('roomInvite'), trigger: $('inviteRoom'), content: $('inviteBlock'), closeButton: $('closeInvite'), initialFocus: $('copyRoom') });
   const notifications = createLobbyNotifications({ notifyChat: () => sound('chat'), notifyReady: () => sound('ready'), notifyConfirmed: () => sound('confirmed') });
@@ -45,8 +45,10 @@ export function createRoomUI(room, { show, gameRunning = () => false, unlockAudi
     try { await fn(); } catch (e) { $('entryStatus').textContent = e.message; if (room.phase === 'error' || room.phase === 'idle') show('entry'); }
     finally { busy = false; $('createRoom').disabled = $('joinRoom').disabled = false; }
   };
-  $('createRoom').onclick = entryAction(async () => { onEntry(); void unlockAudio(); rememberName(); show('room'); await room.create(driverName(), { roomName: $('publicRoomName')?.value || '' }); setURL(room.code); });
+  $('createRoom').onclick = entryAction(async () => { onEntry(); void unlockAudio(); rememberName(); const visibility = document.querySelector('input[name="roomVisibility"]:checked')?.value || 'private'; if (visibility === 'public') await preparePublic(); show('room'); await room.create(driverName(), { roomName: $('publicRoomName')?.value || '', visibility }); setURL(room.code); });
   $('joinRoom').onclick = entryAction(async () => { onEntry(); void unlockAudio(); rememberName(); const code = parseInvitation($('joinCode').value); setURL(code); show('room'); await room.join(code, driverName()); });
+
+  const joinPublic = invite => entryAction(async () => { onEntry(); void unlockAudio(); rememberName(); const code = parseInvitation(invite); setURL(code); show('room'); await room.join(code, driverName()); })();
 
   // ---- room actions -------------------------------------------------------------
   const action = fn => async () => { try { await fn(); } catch (e) { $('roomMessage').textContent = e.message; } };
@@ -200,7 +202,7 @@ export function createRoomUI(room, { show, gameRunning = () => false, unlockAudi
     stalled: e => [`${e.name} stopped responding`, 'Out of this race · back in the room for the next one', 'out'],
     offline: () => ['Invitation service reconnecting', 'Drivers already in the room stay connected. New invitations wait until it is back.', 'warn'],
     online: () => ['Invitation service connected', 'New drivers can join with the invitation again.', 'in'],
-    'connect-failed': e => [`${e.name} could not connect`, 'They found the room, but their network and yours could not open a direct connection (no TURN relay yet). They can try another network or turn off a VPN.', 'warn'],
+    'connect-failed': e => [`${e.name} could not connect`, 'They found the room, but their network and yours could not establish a connection, even with relay support. They can try another network or turn off a VPN.', 'warn'],
   };
   function toast(title, detail) {
     if (!gameRunning()) return;
@@ -244,6 +246,7 @@ export function createRoomUI(room, { show, gameRunning = () => false, unlockAudi
   let lastSignaling = true;
 
   return {
+    joinPublic,
     markChatRead: markRead,
     // Room transport events (room.js): the other drivers' arrivals and departures
     // come from announce() (snapshots, every cabinet); here only this cabinet's admission.
@@ -259,6 +262,8 @@ export function createRoomUI(room, { show, gameRunning = () => false, unlockAudi
       }
       if (state.phase === 'idle') { invitationMenu.setAvailable(false); noticeLines.length = 0; $('roomNotice').hidden = true; lastSignaling = true; return; }
       if (['lobby', 'playing', 'waiting'].includes(state.phase) && state.signaling !== lastSignaling) { lastSignaling = state.signaling; announce({ kind: state.signaling ? 'online' : 'offline' }); }
+      $('roomVisibilityLabel').textContent = state.visibility === 'public' ? 'PUBLIC MULTIPLAYER' : 'PRIVATE MULTIPLAYER';
+      $('inviteHint').textContent = state.visibility === 'public' ? 'Drivers enter automatically while seats are available.' : 'Only admitted players can join the grid and chat.';
       panel.classList.toggle('guest-room', !state.isHost); panel.classList.toggle('has-requests', state.isHost && state.pending.length > 0); panel.dataset.phase = state.phase;
       const out = state.phase === 'playing' && state.members.find(m => m.id === state.id)?.connection === 'stalled';
       $('roomTitle').textContent = out ? 'Out of this race' : state.phase === 'waiting' ? 'Waiting for the next race' : state.phase === 'pending' ? 'Request sent' : state.phase === 'error' ? 'Room unavailable' : state.roomName || (state.isHost ? 'Your starting grid' : 'Your race room');
@@ -280,7 +285,7 @@ export function createRoomUI(room, { show, gameRunning = () => false, unlockAudi
       $('leaveRoomLabel').textContent = state.phase === 'playing' ? 'Leave game' : state.phase === 'error' ? 'Back to rooms' : 'Leave room';
       const notReady = state.members.filter(m => !m.ready).length;
       const lobby = state.pending.length ? 'Review the requests to complete your grid.' : state.members.length < 2 ? 'Invite at least one friend: a linked race needs two cabinets.' : notReady ? `${notReady} ${notReady === 1 ? 'driver is' : 'drivers are'} not ready yet.` : state.isHost ? 'Your grid is ready. Start when you are.' : 'Your grid is ready. Waiting for the host.';
-      const labels = { connecting: { signaling: 'Contacting the invitation service…', contacting: 'Looking for the room…', direct: 'Room found. Opening a direct connection to the host…' }[state.stage] || 'Connecting to the room…', pending: 'Your host will admit you shortly.', lobby, playing: out ? 'Your cabinet stopped responding, so the race went on without it. Wait here: you take your seat again when the host returns everyone to the room.' : 'The race keeps running while this menu is open.', error: state.error || 'Try another invitation.' };
+      const labels = { connecting: { signaling: 'Contacting the invitation service…', contacting: 'Looking for the room…', direct: 'Room found. Opening a connection to the host…' }[state.stage] || 'Connecting to the room…', pending: 'Your host will admit you shortly.', lobby, playing: out ? 'Your cabinet stopped responding, so the race went on without it. Wait here: you take your seat again when the host returns everyone to the room.' : 'The race keeps running while this menu is open.', error: state.error || 'Try another invitation.' };
       $('roomMessage').textContent = labels[state.phase] || '';
       $('roomConnection').textContent = state.phase === 'connecting' ? 'Connecting…' : state.phase === 'error' ? 'Disconnected' : state.signaling ? '● Room connected' : 'Room connected · invitation service reconnecting';
       $('roomConnection').dataset.state = state.phase === 'error' ? 'offline' : state.signaling ? 'connected' : 'recovering';

@@ -29,14 +29,17 @@ export function parseInvitation(value) {
 }
 
 export class PrivateRoom {
-  constructor(link, { onChange = () => {}, onEvent = () => {}, onStart = () => {}, onStop = () => {}, gamePhase = () => 0 } = {}) {
-    Object.assign(this, { link, onChange, onStart, onStop, gamePhase });
+  // onHostLost({ closed, resume }): a guest lost the host during a linked game (closed: the host
+  // closed the room; resume: this seat's resumeState() for a reconnection attempt otherwise).
+  constructor(link, { onChange = () => {}, onEvent = () => {}, onStart = () => {}, onStop = () => {}, onHostLost = () => {}, gamePhase = () => 0 } = {}) {
+    Object.assign(this, { link, onChange, onStart, onStop, onHostLost, gamePhase });
     this.onEvent = e => { this.logEvent(e.kind, e.name || ''); onEvent(e); };
     this.reset();
     link.onConnect = c => this.connected(c);
     link.onDisconnect = c => this.disconnected(c);
     link.onMessage = (d, c) => this.message(d, c);
-    link.onFailure = reason => this.fail(reason);
+    // Only while connecting: a late failure of an earlier attempt must not replace the room's state (2026-11-14).
+    link.onFailure = reason => { if (['connecting', 'pending'].includes(this.phase)) this.fail(reason); };
     link.onSignaling = up => { this.signaling = up; this.changed(); };
     // Joining progress and failures in words (2026-11-12): see explainConnection.
     link.onStage = stage => { this.stage = stage; this.changed(); };
@@ -57,9 +60,9 @@ export class PrivateRoom {
     this.phase = 'idle'; this.code = ''; this.hostId = ''; this.isHost = false; this.error = '';
     this.members = []; this.pending = []; this.chat = []; this.settings = { ...DEFAULT_SETTINGS };
     this.peers = new Map(); this.seq = 0; this.lastChat = 0; this.command = 0; this.lastAck = null;
-    this.readyPending = false; this.seatPending = 0; this.signaling = true; this.name = 'Driver'; this.refusal = '';
+    this.readyPending = false; this.seatPending = 0; this.signaling = true; this.name = 'Driver'; this.refusal = ''; this.hostClosed = false;
     this.stage = ''; this.answered = false; clearTimeout(this.answerTimer);
-    this.roomName = ''; this.token = ''; this.reserved = []; this.swaps = []; this.waiters = [];   // swaps: seat-swap offers (30 s, as Daytona USA Web)   // reserved: seats kept for drivers returning after a restart
+    this.roomName = ''; this.visibility = 'private'; this.token = ''; this.reserved = []; this.swaps = []; this.waiters = [];   // swaps: seat-swap offers (30 s, as Daytona USA Web)   // reserved: seats kept for drivers returning after a restart
   }
   get id() { return this.link.id; }
   get occupied() { return this.phase !== 'idle'; }
@@ -68,7 +71,7 @@ export class PrivateRoom {
     return { phase: this.phase, id: this.id, host: this.hostId, isHost: this.isHost, code: this.code, error: this.error,
       members: this.members.map(m => ({ ...m })), pending: this.pending.map(m => ({ ...m })), chat: this.chat.slice(),
       settings: { ...this.settings }, lastAck: this.lastAck, readyPending: this.readyPending, seatPending: this.seatPending,
-      signaling: this.signaling, chatAvailable: this.active, visibility: 'private', roomName: this.roomName, stage: this.stage,
+      signaling: this.signaling, chatAvailable: this.active, visibility: this.visibility, roomName: this.roomName, stage: this.stage,
       reserved: this.reserved.map(r => ({ name: r.name, cabinet: r.cabinet })), swaps: this.swaps.map(o => ({ ...o })), waiters: this.waiters.map(w => ({ id: w.id, name: w.name })) };
   }
   changed() { this.onChange(this.snapshot()); }
@@ -92,8 +95,8 @@ export class PrivateRoom {
   // ---- entry ------------------------------------------------------------------
   // restore: the room as it was before the host's page restarted (same code;
   // the other drivers come back to their seats with their tokens).
-  async create(name, { roomName = '', restore = null } = {}) {
-    this.leave(); this.name = cleanName(name); this.roomName = cleanRoomName(roomName || restore?.roomName); this.phase = 'connecting'; this.changed();
+  async create(name, { roomName = '', restore = null, visibility = 'private' } = {}) {
+    this.leave(); this.visibility = (restore?.visibility || visibility) === 'public' ? 'public' : 'private'; this.name = cleanName(name); this.roomName = cleanRoomName(roomName || restore?.roomName); this.phase = 'connecting'; this.changed();
     try { this.code = await this.link.host(restore?.code); }
     catch (e) { this.fail(explainConnection(e?.type || e?.message, 'host')); throw new Error(this.error); }
     this.isHost = true; this.hostId = this.id; this.phase = 'lobby';
@@ -117,7 +120,7 @@ export class PrivateRoom {
   // What a page restart needs to bring this cabinet back into the same room.
   resumeState() {
     if (!this.code || !['lobby', 'playing', 'waiting'].includes(this.phase)) return null;
-    if (this.isHost) return { role: 'host', code: this.code, name: this.name, roomName: this.roomName, settings: this.settings, chat: this.chat.slice(-CHAT_HISTORY),
+    if (this.isHost) return { role: 'host', visibility: this.visibility, code: this.code, name: this.name, roomName: this.roomName, settings: this.settings, chat: this.chat.slice(-CHAT_HISTORY),
       members: [...this.members.filter(m => !m.departed || m.connection === 'stalled').map(m => ({ name: m.name, cabinet: m.cabinet, token: m.token || '', self: m.id === this.id })),
         ...this.waiters.map(w => ({ name: w.name, cabinet: 0, token: w.token, self: false }))], at: Date.now() };
     return this.token ? { role: 'guest', code: this.code, name: this.name, token: this.token, at: Date.now() } : null;
@@ -131,6 +134,8 @@ export class PrivateRoom {
   }
   leave() {
     if (this.phase === 'idle') return;
+    // The host says it closed the room, so the guests leave a running game at once (2026-11-14).
+    if (this.isHost) for (const c of this.peers.keys()) this.send(c, { t: 'closed' });
     for (const c of this.peers.keys()) { try { c.close(); } catch {} }
     this.link.disconnect(); this.reset(); this.changed();
   }
@@ -149,8 +154,11 @@ export class PrivateRoom {
   disconnected(c) {
     if (!this.isHost) {
       if (this.phase === 'idle' || this.phase === 'error') return;   // reported once (the link and the ping can both see it)
-      const playing = this.phase === 'playing';
-      this.fail(this.refusal || (playing ? 'The host cabinet left. The race cannot finish without it: open the menu to leave the room.' : 'The host closed the room.'));
+      // In a linked game the guest leaves it for the room (user, 2026-11-14): main.js restarts
+      // the cabinet into the room view and, unless the host closed the room, tries to rejoin.
+      const playing = this.phase === 'playing', closed = this.hostClosed, resume = playing && !closed && !this.refusal ? this.resumeState() : null;
+      this.fail(this.refusal || (closed || !playing ? 'The host closed the room.' : 'The host cabinet left the race.'));
+      if (playing && !this.refusal) this.onHostLost({ closed, resume });
       return;
     }
     const info = this.peers.get(c); this.peers.delete(c); if (!info) return;
@@ -225,6 +233,7 @@ export class PrivateRoom {
     if (this.isHost) return this.command_(d, c);
     this.answered = true;
     if (d.t === 'ping') { this.send(c, { t: 'pong', ts: d.ts }); return; }
+    if (d.t === 'closed' && !this.isHost) { this.hostClosed = true; return; }
     if (d.t === 'refused') { this.refusal = d.reason; this.fail(d.reason); try { c.close(); } catch {} return; }
     if (d.t === 'welcome') { this.token = String(d.token || ''); return; }
     if (d.t === 'stop') { this.onStop('guest', typeof d.note === 'string' ? d.note.slice(0, 200) : ''); return; }
@@ -232,7 +241,7 @@ export class PrivateRoom {
     if (d.t === 'sync') {
       const s = d.state, me = s.members.find(m => m.id === this.id);
       const wasMember = this.members.some(m => m.id === this.id);
-      Object.assign(this, { members: s.members, pending: s.pending, chat: s.chat, settings: cleanSettings(s.settings), code: s.code, hostId: s.host, roomName: cleanRoomName(s.roomName), reserved: s.reserved || [], swaps: Array.isArray(s.swaps) ? s.swaps : [], waiters: Array.isArray(s.waiters) ? s.waiters : [] });
+      Object.assign(this, { members: s.members, pending: s.pending, chat: s.chat, settings: cleanSettings(s.settings), code: s.code, hostId: s.host, roomName: cleanRoomName(s.roomName), visibility: s.visibility === 'public' ? 'public' : 'private', reserved: s.reserved || [], swaps: Array.isArray(s.swaps) ? s.swaps : [], waiters: Array.isArray(s.waiters) ? s.waiters : [] });
       this.phase = me ? s.phase : (s.waiters || []).some(w => w.id === this.id) ? 'waiting' : s.pending.some(m => m.id === this.id) ? 'pending' : this.phase;
       if (d.ack && d.ack.command !== this.lastAck?.command) {
         this.lastAck = d.ack;
@@ -260,6 +269,11 @@ export class PrivateRoom {
       if (!['lobby', 'playing'].includes(this.phase)) { this.send(c, { t: 'refused', reason: 'The room is not open.' }); return; }
       if (this.members.length + this.pending.length + this.waiters.length >= SEATS + 4) { this.send(c, { t: 'refused', reason: 'This room is full.' }); return; }
       info.state = 'pending'; this.pending.push({ id: info.id, name: info.name, connection: 'connected' });
+      if (this.visibility === 'public') {
+        const available = this.phase === 'lobby' ? !!this.freeSeat() : this.members.filter(m => !m.departed).length + this.waiters.length < SEATS;
+        if (available) this.approve(info.id); else this.drop(info.id, 'This public room is full. Try another room.');
+        return;
+      }
       this.onEvent({ kind: 'request', name: info.name, inGame: this.phase === 'playing' });
       this.publish(); return;
     }

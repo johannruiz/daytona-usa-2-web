@@ -3,7 +3,10 @@
 export class AudioOutput {
   constructor() { this.context = null; this.node = null; this.muted = false; this.volume = 1; }
   async start() {
-    if (this.context) { await this.context.resume(); return; }
+    // resume() stays pending while the browser's autoplay policy blocks sound (no user
+    // gesture yet in this page, e.g. a guest whose race starts from the network): never
+    // wait for it, or the engine never starts (2026-11-14). A later gesture resumes it.
+    if (this.context) { this.context.resume().catch(() => {}); return; }
     this.context = new AudioContext({ sampleRate: 44100, latencyHint: 'interactive' });
     await this.context.audioWorklet.addModule('./audio-worklet.js');
     this.node = new AudioWorkletNode(this.context, 'daytona2-audio', { outputChannelCount: [2] });

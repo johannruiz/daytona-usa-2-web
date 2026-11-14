@@ -26,6 +26,9 @@ import { protectTouchSurface } from './d1/touch-guard.js';
 import { makeBackup, raceOptions, loadStored, saveStored } from './nvram.js';
 import { CentralLinkNet } from './central-link-net.js';
 import { PrivateRoom } from './room.js';
+import {PublicRoomDirectory} from './public-rooms.js';
+import {mountPublicRoomBrowser} from './public-rooms-ui.js';
+import {createFirebaseDirectoryBackend} from './firebase-client.js';
 import { createRoomUI } from './room-ui.js';
 import { mountGameChat } from './d1/game-chat.js';
 import { mountHostConsole } from './host-console.js';
@@ -44,6 +47,7 @@ const settings = loadSettings(storage, { mobile });
 const display = { mode: 'enhanced', scale: 1, ...JSON.parse(storage.getItem(DISPLAY_ID) || '{}') };
 delete display.fps;   // the simulation rate is always shown (user, 2026-11-12)
 const held = new Set();
+let publicDirectory = null;
 let outOfRace = false, preparing = false;   // preparing: the cabinet notice until the first field   // this cabinet left the linked race after stopping (outOfRaceCheck)
 let host, renderer, engineReady, started = false, running = false, romReady = false, sessionKind = null, nvramName = 'cabinet';
 // 60 Hz by default (user, 2026-11-12: smooth on every display, the same
@@ -168,6 +172,7 @@ setInterval(() => {
 // 'entry' (create / join a room) and 'room' (the starting grid).
 const utilities = document.querySelector('.menu-quick-controls'), utilitiesHome = utilities.parentElement;
 function view(name) {
+  publicDirectory?.setBrowsing(name === 'entry');
   const panel = name === 'single' || name === 'entry' || name === 'room';
   $('dropzone').hidden = name !== 'rom'; $('playerModes').hidden = name !== 'modes';
   $('singlePlayerPanel').hidden = name !== 'single'; $('multiplayerEntry').hidden = name !== 'entry'; $('roomPanel').hidden = name !== 'room';
@@ -282,7 +287,8 @@ if (params.get('devroms')) devRoms().catch(e => { restartNotice(null); status(e.
 else engineReady.then(() => romMemory.restore()).catch(() => {}).finally(() => { if (!romReady) restartNotice(null); });
 
 // A new race setup or a switch between single and linked play reloads the page.
-function restartWith(intent) { try { sessionStorage.setItem(INTENT, JSON.stringify(intent)); } catch {} restartNotice(intent); requestSave(); setTimeout(() => { host?.stop(); setTimeout(() => location.reload(), 0); }, 150); }
+let pageRestarting = false;   // a planned restart (restartWith): the room goes on
+function restartWith(intent) { pageRestarting = true; try { sessionStorage.setItem(INTENT, JSON.stringify(intent)); } catch {} restartNotice(intent); requestSave(); setTimeout(() => { host?.stop(); setTimeout(() => location.reload(), 0); }, 150); }
 const RESTART_TEXT = {
   room: ['MULTIPLAYER', 'Returning to the room', 'Restarting this cabinet. Your seat is kept.'],
   entry: ['MULTIPLAYER', 'Leaving the room', 'Restarting this cabinet.'],
@@ -304,6 +310,7 @@ function restartNotice(intent) {
 try { restartNotice(JSON.parse(sessionStorage.getItem(INTENT) || 'null')); } catch {}
 function continueIntent() {
   let intent = null; try { intent = JSON.parse(sessionStorage.getItem(INTENT) || 'null'); sessionStorage.removeItem(INTENT); } catch {}
+  if (intent?.view === 'room' && intent.closed) { view('room'); room.fail(intent.note || 'The host closed the room.'); restartNotice(null); return; }
   if (intent?.view === 'room') { void resumeRoom().then(ok => { if (!ok) view('entry'); restartNotice(null); }); return; }
   if (intent?.view !== 'single-start') restartNotice(null);
   if (!intent) return;
@@ -427,12 +434,13 @@ const roomArrivals = createRoomArrivals({ notify: e => {
   void roomAlerts.show(e);
 } });
 const room = new PrivateRoom(link, {
-  onChange: state => { roomAlerts.sync(state); roomUI?.render(state); roomArrivals.update(state); gameChat?.sync(state); hostConsole?.render(state); linkLostNotice(state); outOfRaceCheck(state); },
+  onChange: state => { publicDirectory?.updateHost(state); roomAlerts.sync(state); roomUI?.render(state); roomArrivals.update(state); gameChat?.sync(state); hostConsole?.render(state); linkLostNotice(state); outOfRaceCheck(state); },
   onEvent: event => roomUI?.event(event),
   onStart: session => void startLinked(session),
   // The host returned everyone to the room: every cabinet restarts its page
   // (one engine per page) and comes back into the same room and seat.
   onStop: (_, note) => backToRoom(note),
+  onHostLost: info => hostLost(info),
   // Game phase for the room's drop rule (room.checkDropReturn, linked games only).
   gamePhase: () => (started && sessionKind === 'link' && host?.module?._dayto_web_link_phase?.()) || 0,
 });
@@ -452,6 +460,21 @@ function linkLostNotice(state) {
   const n = $('networkStatus'); if (n.textContent === state.error && !n.hidden) return;
   clearTimeout(n.hideTimer); n.textContent = state.error; n.hidden = false;
 }
+// The host left a linked game (user, 2026-11-14): this guest leaves the race,
+// which cannot go on, for the room. If the host closed the room the room view
+// says so; otherwise the guest tries to rejoin for 30 s (resumeRoom), in case
+// the host cabinet comes back with the room, and else says the host left.
+function hostLost({ closed, resume }) {
+  if (!started || sessionKind !== 'link' || pageRestarting) return;   // already going back to the room (stop)
+  roomArrivals.mute();
+  if (!closed && resume) {
+    try { sessionStorage.setItem(RESUME, JSON.stringify({ ...resume, retry: true })); } catch {}
+    restartWith({ view: 'room', note: 'The host cabinet left the race. Waiting for the room to reopen…' });
+  } else restartWith({ view: 'room', closed: true, note: 'The host closed the room.' });
+}
+// The host closes the room when its page goes away outside a planned restart
+// (tab closed, F5, navigation), so the guests leave the game at once.
+addEventListener('pagehide', e => { if (!e.persisted && !pageRestarting && room.isHost) room.leave(); });
 function backToRoom(note = '') {
   roomArrivals.mute();   // the other cabinets restart too: their departures are not news
   const resume = room.resumeState(); if (!resume) { restartWith({ view: 'entry' }); return; }
@@ -460,13 +483,25 @@ function backToRoom(note = '') {
   restartWith({ view: 'room', ...(note ? { note } : {}) });
 }
 // After a restart: reopen the room (host) or go back to the same seat (guest).
+// After the host left a race (hostLost): rejoin attempts for 30 s, the restart notice kept up meanwhile.
+async function rejoinRoom(r) {
+  restartNotice({ view: 'room', note: 'Waiting for the host to reopen the room…' });
+  const until = Date.now() + 30000;
+  for (;;) {
+    try { await room.join(r.code, r.name, r.token); } catch {}
+    const phase = await new Promise(res => { const t0 = Date.now(), poll = setInterval(() => { if (room.phase !== 'connecting' || Date.now() - t0 > 20000) { clearInterval(poll); res(room.phase); } }, 200); });
+    if (phase !== 'error' && phase !== 'connecting') return;
+    if (Date.now() >= until) { room.leave(); room.fail('The host cabinet left the race and did not reopen the room.'); return; }
+    await new Promise(res => setTimeout(res, 3000));
+  }
+}
 async function resumeRoom() {
   let r = null; try { r = JSON.parse(sessionStorage.getItem(RESUME) || 'null'); sessionStorage.removeItem(RESUME); } catch {}
   if (!r || Date.now() - r.at > 120000) return false;
   view('room'); restartNotice(null);
   try {
     if (r.role === 'host') await room.create(r.name, { restore: r });
-    else { await new Promise(res => setTimeout(res, 2500)); await room.join(r.code, r.name, r.token); }
+    else { await new Promise(res => setTimeout(res, 2500)); if (r.retry) await rejoinRoom(r); else await room.join(r.code, r.name, r.token); }
     history.replaceState(history.state, '', location.pathname + location.search + '#room=' + room.code);
   } catch (e) { console.warn('[room] resume failed', e); }
   return true;
@@ -488,7 +523,14 @@ room.onOrder = order => standings.update(order, room.members, standingsShown());
 setInterval(() => { if (sessionKind === 'link') standings.update(room.order, room.members, standingsShown()); }, 500);
 const hostConsole = mountHostConsole(room, { link, open: () => { $('mainMenu').hidden = true; $('overlay').scrollTop = 0; }, close: () => { $('mainMenu').hidden = false; } });
 const unlockAudio = async () => { try { await audio.start(); } catch {} };
-const roomUI = createRoomUI(room, { show: view, gameRunning: () => started && sessionKind === 'link', unlockAudio, sound: kind => lobbySound(kind), onEntry: () => void roomAlerts.enable() });
+// Sound blocked by the autoplay policy (a linked race started from the network) starts at the next key or click.
+for (const type of ['pointerdown', 'keydown']) addEventListener(type, () => { if (audio.context?.state === 'suspended') audio.context.resume().catch(() => {}); }, { capture: true, passive: true });
+const roomUI = createRoomUI(room, { show: view, gameRunning: () => started && sessionKind === 'link', unlockAudio, sound: kind => lobbySound(kind), onEntry: () => void roomAlerts.enable(), preparePublic: () => publicDirectory.prepare() });
+publicDirectory = new PublicRoomDirectory({backend: createFirebaseDirectoryBackend});
+mountPublicRoomBrowser(publicDirectory,{join: row => roomUI.joinPublic(row.invite)});
+publicDirectory.setVisible(!document.hidden);
+document.addEventListener('visibilitychange',()=>publicDirectory.setVisible(!document.hidden));
+addEventListener('pagehide',()=>publicDirectory.dispose());
 const gameChat = mountGameChat($('gameChat'), { room, storage, gameShown: () => started && running && $('overlay').hidden,
   notify: () => lobbySound('chat'), onRead: () => roomUI.markChatRead(), onTyping: () => { held.clear(); keyboardControls.reset(); },
   returnFocus: () => $('screen').focus({ preventScroll: true }) });

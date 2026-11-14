@@ -1,3 +1,4 @@
+import {turnClient, maintainIceConfiguration} from './turn-client.js';
 // Central link over WebRTC for Daytona USA 2 web (Claude 2026-11-11).
 // Browser transport of src/comm/central_link.c (DAYTO_WEB build): the host
 // cabinet is node 0 (MASTER) and the central relay. Every field each cabinet
@@ -29,9 +30,9 @@ const NETSIM = (() => { const m = /[?&]netsim=([\d.]+)(?:,([\d.]+))?(?:,([\d.]+)
   const phase = () => { const now = performance.now(); t0 ??= now; let t = (now - t0) % cycle; for (const p of phases) { if (t < p[3] * 1000) return p; t -= p[3] * 1000; } return phases[0]; };
   return { get delay() { return phase()[0]; }, get jitter() { return phase()[1]; }, get loss() { return phase()[2] / 100; } };
 })();
-// Public STUN servers, as Daytona USA Web's DEFAULT_ICE (turn-client.js). Its TURN
-// relay needs D1's Firebase-authenticated worker and is not used here yet.
-const PEER_OPTIONS = { config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }] } };
+// Direct paths remain preferred; the separate D2 issuer supplies temporary TURN.
+const peerOptions = value => ({config:{iceServers:value.iceServers,iceTransportPolicy:/[?&]relay=1(?:&|$)/.test(globalThis.location?.search||'')?'relay':'all'}});
+
 
 function loadPeerJS() {
   if (globalThis.Peer) return Promise.resolve();
@@ -42,14 +43,14 @@ function loadPeerJS() {
 }
 // Why joining or hosting failed, in words (2026-11-12, user): a connection that
 // never opened used to leave the guest on "Connecting…" for good. Without a
-// TURN relay (see PEER_OPTIONS), two networks that cannot reach each other
+// TURN relay (see peerOptions), two networks that cannot reach each other
 // directly (strict NAT, corporate or campus networks, some mobile carriers,
 // VPNs) never connect; ICE then fails or the opening times out.
 const SIGNAL_TIMEOUT_MS = 15000, OPEN_TIMEOUT_MS = 20000;
 export function explainConnection(why, role = 'guest') {
   if (why === 'peer-unavailable') return 'That room is not available. The host may have closed it, or the code is wrong. Ask the host for a new invitation.';
   if (why === 'no-answer') return 'The host\u2019s cabinet did not answer. Its page may be closed, asleep or still loading. Ask the host to keep the room open, then try again.';
-  if (why === 'ice' || why === 'negotiation-failed') return 'The room was found, but your network and the host\u2019s could not connect directly. Strict routers, office or campus networks, some mobile carriers and VPNs need a relay (TURN) server, which this version does not have yet. Try another network (mobile data or a different Wi-Fi), turn off any VPN, or let another driver host.';
+  if (why === 'ice' || why === 'negotiation-failed') return 'The room was found, but your network and the host\u2019s could not connect directly. Strict routers, office or campus networks, some mobile carriers and VPNs need a relay (TURN) server. The relay may be unavailable or blocked on this network. Try another network (mobile data or a different Wi-Fi), turn off any VPN, or let another driver host.';
   if (why === 'no-room-answer') return 'Connected to the host, but the room did not answer. Ask the host to reopen the room, then try again.';
   if (why === 'browser-incompatible') return 'This browser cannot make direct (WebRTC) connections. Use a current Chrome or Edge.';
   if (why === 'unavailable-id') return 'That room code is still in use. Wait a few seconds and create the room again.';
@@ -82,12 +83,13 @@ export class CentralLinkNet {
   // reuse: the room code to open again after a page restart; the signalling
   // server may still hold the old page's id for a few seconds, so retry.
   async host(reuse) {
-    await loadPeerJS(); this.isHost = true; const room = reuse || code();
+    await loadPeerJS(); const ice = await turnClient.configuration(); this.relayReady = ice.relay; this.isHost = true; const room = reuse || code();
     for (let attempt = 0; ; attempt++) {
-      this.peer = new Peer(PREFIX + room, PEER_OPTIONS);
+      this.peer = new Peer(PREFIX + room, peerOptions(ice));
       try { await new Promise((res, rej) => { this.peer.on('open', res); this.peer.on('error', rej); }); break; }
       catch (e) { try { this.peer.destroy(); } catch {} if (!reuse || e?.type !== 'unavailable-id' || attempt >= 40) throw e; await new Promise(r => setTimeout(r, 1000)); }
     }
+    this.stopIce?.(); this.stopIce = maintainIceConfiguration(this.peer, ice);
     // A driver whose connection never opens: tell the host (their name travels in the metadata).
     this.peer.on('connection', c => { this.attach(c); this.watchOpening(c, why => this.onConnectFailed({ name: String(c.metadata?.name || ''), why })); });
     this.peer.on('disconnected', () => { this.onSignaling(false); try { this.peer.reconnect(); } catch {} });
@@ -95,7 +97,8 @@ export class CentralLinkNet {
     return room;
   }
   async join(room, name = '') {
-    await loadPeerJS(); this.onStage('signaling'); this.peer = new Peer(PEER_OPTIONS);
+    await loadPeerJS(); this.onStage('signaling'); const ice = await turnClient.configuration(); this.relayReady = ice.relay; this.peer = new Peer(peerOptions(ice));
+    this.stopIce?.(); this.stopIce = maintainIceConfiguration(this.peer, ice);
     await new Promise((res, rej) => {
       const t = setTimeout(() => rej({ type: 'signaling-timeout' }), SIGNAL_TIMEOUT_MS);
       this.peer.on('open', () => { clearTimeout(t); res(); }); this.peer.on('error', e => { clearTimeout(t); rej(e); });
@@ -184,7 +187,7 @@ export class CentralLinkNet {
   transitFields(j) {
     const half = n => (this.rtt[n] ?? 0) / 2;
     const ms = this.isHost ? half(j) : half(this.node) + (j ? half(j) : 0);
-    return ms * this.fieldHz / 1000;   // fieldHz: the engine's own rate (main.js; 57.524 by default since 2026-11-13)
+    return ms * this.fieldHz / 1000;   // fieldHz: the engine's own rate (main.js; 60 by default, 57.524 with ?hz=57)
   }
   // Share of node j's records that never reached this cabinet (0..1), or null.
   lossOf(j) {
@@ -227,7 +230,7 @@ export class CentralLinkNet {
   broadcast(msg, except) { for (const c of this.conns) if (c !== except && c.open) c.send(msg); }
   forward(bytes, except) { const copy = bytes.slice().buffer; for (const c of this.conns) if (c !== except && c.open) this.sendRecord(c, copy); }
   leave(node) { if (node === undefined) return; this.joinedState[node] = 2; this.wake(); this.onStatus(`Cabinet ${node + 1} left.`); }
-  disconnect() { clearInterval(this.pingTimer); try { this.peer?.destroy(); } catch {} this.peer = null; this.conns = []; this.hostConn = null; this.isHost = false; this.session = false; }
+  disconnect() { this.stopIce?.(); this.stopIce = null; clearInterval(this.pingTimer); try { this.peer?.destroy(); } catch {} this.peer = null; this.conns = []; this.hostConn = null; this.isHost = false; this.session = false; }
   // ---- engine transport (src/comm/central_link.c, DAYTO_WEB) --------------
   open(nodes, node) { this.nodes = nodes; this.node = node; return true; }
   close() { this.setJoined(2); }

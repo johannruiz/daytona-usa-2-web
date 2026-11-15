@@ -1,0 +1,35 @@
+Daytona USA 2 Power Edition — Web
+Copyright 2026 Johann Ruiz
+
+This product includes software developed by Johann Ruiz
+(Daytona USA 2 Power Edition Recomp and its web port,
+https://johannruiz.github.io/daytona-usa-2-web/).
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Attribution: any work that uses, copies, modifies or is based on this
+project must keep this NOTICE file, or its attribution text, in its source
+and in its documentation, about box or credits, as required by section 4(d)
+of the Apache License 2.0. Please credit it as:
+
+    Daytona USA 2 Power Edition Recomp by Johann Ruiz
+
+Scope
+-----
+The Apache License 2.0 covers the original work in this project only.
+Third-party components keep their own licenses (see licenses/,
+vendor/PEERJS-LICENSE.txt and fonts/VT323-OFL.txt):
+
+- model3recomp, sp00nznet (MIT).
+- LostWorldNative, snicolast (MIT); its shaders are ported to WGSL here.
+- Musashi 68000 core, Karl Stenerud.
+- SoftFloat, John R. Hauser.
+- MAME-derived parts (BSD-3-Clause).
+- PL_MPEG, Dominic Szablewski (MIT).
+- miniz (MIT).
+- PeerJS, Michelle Bu and Eric Zhang (MIT).
+- VT323 font (SIL Open Font License 1.1).
+
+Daytona USA 2 and all related names, logos and assets belong to SEGA.
+This is an unofficial fan project, not affiliated with or endorsed by SEGA.
+No ROMs are included.

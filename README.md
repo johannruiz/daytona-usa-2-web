@@ -49,12 +49,17 @@ Create a private room and share its code. Up to 16 cabinets can race, and the ho
 
 Cabinets connect directly to each other over WebRTC; the public PeerJS server is used only to find each other. A cabinet that stops responding is left out of the race and rejoins in the room for the next one.
 
-## Licenses
+## License
+
+Original work © 2026 Johann Ruiz, licensed under the [Apache License 2.0](LICENSE). If you use, copy or adapt it, keep the [NOTICE](NOTICE) file and credit “Daytona USA 2 Power Edition Recomp by Johann Ruiz” in your documentation or credits.
+
+## Third-party licenses
 
 The runtime is built on [model3recomp](https://github.com/sp00nznet/model3recomp) and [LostWorldNative](https://github.com/snicolast/LostWorldNative), both MIT, and includes code under the licenses in `licenses/`:
 
 - Musashi;
 - SoftFloat;
 - MAME-derived BSD-3-Clause parts;
+- PL_MPEG and miniz (MIT);
 - PeerJS (`vendor/PEERJS-LICENSE.txt`);
 - the VT323 font (OFL, `fonts/`).

@@ -10,6 +10,7 @@
 // reloads the page and continues where the player was (sessionStorage intent).
 import { Daytona2Renderer } from './webgpu-renderer.js';
 import { EngineHost, FIELD_MS_60 } from './engine-host.js';
+import { CLIENT_VERSION, RELEASE_DATE } from './version.js';
 import { AudioOutput } from './audio.js';
 import { Controls } from './input.js';
 import { createROMStore, createROMMemory } from './d1/rom-memory.js';
@@ -38,6 +39,8 @@ import { createRoomArrivals } from './d1/room-arrivals.js';
 import { createRoomSystemAlerts } from './d1/room-system-alerts.js';
 
 const $ = id => document.getElementById(id);
+// Footer version from version.js, the same one the rooms check (2026-11-18).
+{ const el = $('buildVersion'), time = document.createElement('time'), [y, m, d] = RELEASE_DATE.split('-'); time.dateTime = RELEASE_DATE; time.textContent = `${d}.${m}.${y.slice(2)}`; el?.replaceChildren(`v${CLIENT_VERSION} · `, time); }
 const html = document.documentElement;
 const params = new URLSearchParams(location.search);
 const BACKUP = '/save/cabinet.backup.bin', INTENT = 'd2-intent', RESUME = 'd2-room-resume', RACE_ID = 'd2-race-options-v1', DISPLAY_ID = 'd2-display-v1';

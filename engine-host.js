@@ -99,6 +99,16 @@ export class EngineHost {
     this.inputPtr = M._dayto_web_input_ptr();
     this.next = performance.now();
     M.callMain([]);   // returns when the engine first suspends (JSPI)
+    // By then main() has copied every ROM region into its own memory
+    // (web/native/main_web.c, load()) and keeps only those copies. The /roms
+    // files (~240 MB, held by the virtual file system in JS memory) are not read
+    // again: a new race or ROM reloads the page and imports again (2026-11-18).
+    this.dropRomFiles();
+  }
+  dropRomFiles() {
+    const FS = this.module.FS; let freed = 0;
+    try { for (const n of FS.readdir('/roms')) if (n.endsWith('.bin')) { freed += FS.stat('/roms/' + n).size; FS.unlink('/roms/' + n); } } catch {}
+    if (freed) console.info(`[engine] ROM files released: ${(freed / 1048576).toFixed(0)} MB`);
   }
   present(packet) {
     const M = this.module, t0 = performance.now();
@@ -140,7 +150,7 @@ export class EngineHost {
     // the lock had counted, and a busy page ran 62-72 Hz (linked play, 64.5 Hz).
     const step = this.locked(now) ? 1000 * this.lock.q / (this.lock.hz * this.lock.p) : this.fieldMs;
     this.ideal = Math.max((this.ideal ?? now) + step, now - 250);
-    this.earliest = this.ideal - step;
+    this.earliest = this.ideal - step; this.step = step;
     // Behind schedule: run the next field at once, but through a macrotask so the
     // page (input, rAF, network) is never starved by a chain of microtasks.
     if (!this.paused && !this.drawPending(now) && !this.locked(now) && this.next <= now + 0.5 && this.earliest <= now + 0.5) { this.immediate = (this.immediate || 0) + 1; return new Promise(r => this.yieldNow(resolveAt(r))); }
@@ -155,9 +165,42 @@ export class EngineHost {
   // the timer and draws at once, as without vsync.
   displayRefreshing(now) {
     if (!(this.lastRefresh > 0 && this.refreshGap < 25 && now - this.lastRefresh < 25)) return false;
-    return !this.lock || Math.abs(this.gapAvg - 1000 / this.lock.hz) < 0.1 * 1000 / this.lock.hz;
+    return !this.lock || Math.abs(this.refreshAvg - 1000 / this.lock.hz) < 0.1 * 1000 / this.lock.hz;
   }
   locked(now) { return !this.skipping && !!this.lock && this.displayRefreshing(now); }
+  // Display refresh period from gaps between rAF times (2026-11-18). Each gap
+  // spans a whole number of refreshes: one, or more when a field kept the main
+  // thread busy (on a 240 Hz display a 7-12 ms field skips two or three). The
+  // period is the largest one that every gap is close to a multiple of, then
+  // the mean of the gaps per refresh, where Chrome's 0.1 ms rounding cancels out.
+  // The median used before read 60 Hz as 59.88 and 240 Hz as 238.1 (or, with
+  // slow fields, 240 Hz as 80); the rate cap then held the fields back and an
+  // image was repeated every ~8 s at 60 Hz. Falls back to the median when no
+  // period fits (a variable-refresh display).
+  static refreshPeriod(gaps) {
+    const sorted = [...gaps].sort((a, b) => a - b), base = sorted[4], med = sorted[sorted.length >> 1];
+    for (let k = 1; k <= 6; k++) {
+      const c = base / k; if (c < 3) break;
+      let sum = 0, n = 0;
+      for (const g of gaps) { const m = Math.round(g / c); if (m >= 1 && Math.abs(g - m * c) < 0.25) { sum += g / m; n++; } }
+      if (n >= gaps.length * 0.9) return sum / n;
+    }
+    return med;
+  }
+  // A refresh the lock gives a field may come up to half a refresh before the
+  // rate cap's virtual clock (2026-11-18): the measured refresh rate is only
+  // nearly exact, and without this margin its error added up field after
+  // field until a refresh could no longer start its field (a repeated image
+  // every ~8 s at 60 Hz, ~0.5 s at 240 Hz). A field started that way pulls
+  // the virtual clock back to the real refreshes, so the error never adds up;
+  // the lock's own p/q count still keeps the fields from running ahead. Only
+  // a refresh gets the margin: a field the timer starts keeps the exact cap.
+  lockSlack() { return 500 / this.lock.hz; }
+  startLocked(now, refresh = true) {
+    this.lock.due--; this.lockedFields++; this.next = now;
+    if (refresh && this.earliest > now) { this.ideal = now + this.step; this.earliest = now; this.realigned = (this.realigned || 0) + 1; }
+    const w = this.waiter; this.waiter = null; return w;
+  }
   // p/q nearest the target rate for the measured refresh period, smallest q
   // within 0.5% (else the nearest); null when no ratio is within 2%.
   chooseLock(refreshMs) {
@@ -188,7 +231,9 @@ export class EngineHost {
     this.refreshing = true;
     let lastT = 0, due = 0;
     const period = this.rafHz ? 1000 / this.rafHz : 0;
-    const raf = period ? f => { const now = performance.now(); due = Math.max(due + period, now); setTimeout(() => f(performance.now()), due - now); } : f => requestAnimationFrame(f);
+    // Emulated display (test only): refreshes on an exact grid, time-stamped like
+    // Chrome's rAF (the refresh's own time, rounded down to 0.1 ms).
+    const raf = period ? f => { const now = performance.now(); due += period; if (due < now - 4 * period) due = now; const at = due; setTimeout(() => f(Math.floor(at * 10) / 10), Math.max(0, at - now)); } : f => requestAnimationFrame(f);
     const frame = t => {
       raf(frame);
       const now = performance.now();
@@ -197,30 +242,51 @@ export class EngineHost {
       this.gapAvg = this.gapAvg ? this.gapAvg + (Math.min(this.refreshGap, 100) - this.gapAvg) * 0.1 : Math.min(this.refreshGap, 100); this.refreshCount = (this.refreshCount || 0) + 1;
       this.lastRefresh = now;
       this.updateSkip(now);
-      // Refresh period: median of the last 90 refreshes (re-chosen if it moves by >2%).
+      // Refresh period over the last 90 refreshes (lock re-chosen if it moves by >2%);
+      // see refreshPeriod().
       const d = t - lastT; lastT = t;
+      // Refresh regularity for the lock (2026-11-18): the gaps between rAF times
+      // per refresh they span. While a field runs (7-12 ms) Chrome skips the
+      // refreshes in between and runs one rAF later; on fast displays (240 Hz)
+      // the callbacks' own gaps then strayed over 10% from the refresh period
+      // and the lock switched off (fields on the timer: as if without vsync).
+      if (!stale && d > 0 && d < 100 && this.lock) {
+        const per = d / Math.max(1, Math.round(d * this.lock.hz / 1000));
+        this.refreshAvg = this.refreshAvg ? this.refreshAvg + (per - this.refreshAvg) * 0.1 : per;
+      }
       if (!stale && d > 3 && d < 25) {
         this.refreshTimes.push(d); if (this.refreshTimes.length > 90) this.refreshTimes.shift();
-        if (this.refreshTimes.length === 90 && (!this.lock || Math.abs(1000 / this.lock.hz - [...this.refreshTimes].sort((a, b) => a - b)[45]) / (1000 / this.lock.hz) > 0.02)) {
-          this.lock = this.chooseLock([...this.refreshTimes].sort((a, b) => a - b)[45]);
+        if (this.refreshTimes.length === 90) {
+          const period = EngineHost.refreshPeriod(this.refreshTimes);
+          if (!this.lock || Math.abs(1000 / this.lock.hz - period) / (1000 / this.lock.hz) > 0.02) this.lock = this.chooseLock(period);
+          else if (Math.abs(1000 / this.lock.hz - period) > 0.002) this.lock.hz = 1000 / period;   // same ratio, finer rate
         }
       }
-      if (this.pendingDraw) {
-        this.pendingDraw = false; this.vsyncDraws++;
+      const L = this.lock, active = !!L && !this.paused && !this.skipping && this.displayRefreshing(now);
+      if (active) {
+        L.acc += L.p * Math.max(1, Math.round(d / (1000 / L.hz)));   // refreshes since the last one
+        while (L.acc >= L.q) { L.acc -= L.q; L.due++; }
+      }
+      // Fixed image phase on fast displays (2026-11-18): when each field spans two
+      // or more refreshes (120 Hz and up), its image waits for the refresh that
+      // starts the next field instead of the first one after the field ends. A
+      // field takes 7-12 ms, so that first refresh moved by one (4.2 ms at
+      // 240 Hz) from field to field: an uneven cadence. Never held longer than
+      // the lock's longest gap between fields.
+      const hold = active && L.q >= 2 * L.p && !L.due && this.pendingDraw && (this.held = (this.held || 0) + 1) < Math.ceil(L.q / L.p);
+      if (this.pendingDraw && !hold) {
+        this.pendingDraw = false; this.vsyncDraws++; this.held = 0;
         this.renderer.render();
         const f = this.afterDraw; this.afterDraw = null; if (f) this.yieldNow(f);   // after this frame is handed over
       }
-      const L = this.lock;
-      if (!L || this.paused || this.skipping || !this.displayRefreshing(now)) return;
-      L.acc += L.p * Math.max(1, Math.round(d / (1000 / L.hz)));   // refreshes since the last one
-      while (L.acc >= L.q) { L.acc -= L.q; L.due++; }
+      if (!active) return;
       // No catching up (as Supermodel): a field the engine could not start in
       // time is not run twice in a row later.
       if (L.due > 1) L.due = 1;
       // The field starts in a task of its own (2026-11-14), not inside this refresh's
       // rendering step: resuming the engine here (a microtask, 7-12 ms) held back the
       // frame just drawn, so it reached the screen late at random (uneven cadence).
-      if (L.due && this.waiter && now >= this.earliest) { L.due--; this.lockedFields++; this.next = now; const w = this.waiter; this.waiter = null; this.yieldNow(w); }
+      if (L.due && this.waiter && now >= this.earliest - this.lockSlack()) this.yieldNow(this.startLocked(now));
     };
     raf(frame);
   }
@@ -243,7 +309,7 @@ export class EngineHost {
       // over if the refreshes stop (hidden or occluded window).
       if (this.locked(performance.now())) {
         const now = performance.now();
-        if (this.lock.due) { this.lock.due--; this.lockedFields++; this.next = now; const w = this.waiter; this.waiter = null; w(); return; }
+        if (this.lock.due) { this.startLocked(now, false)(); return; }
         // Safety net: a field later than the lock's longest normal wait (its
         // longest hold, ceil(q/p) refreshes) plus 3/4 of a refresh means a
         // refresh the browser skipped: it runs on the timer, so the lock never

@@ -22,7 +22,7 @@ export function createRoomUI(room, { show, gameRunning = () => false, unlockAudi
   const panel = $('roomPanel');
   const invitationMenu = mountRoomInvitation({ container: $('roomInvite'), trigger: $('inviteRoom'), content: $('inviteBlock'), closeButton: $('closeInvite'), initialFocus: $('copyRoom') });
   const notifications = createLobbyNotifications({ notifyChat: () => sound('chat'), notifyReady: () => sound('ready'), notifyConfirmed: () => sound('confirmed') });
-  const cards = new Map(), emptySeats = new Map(), messages = new Map();
+  const cards = new Map(), emptySeats = new Map(), messages = new Map(), waitCards = new Map();
   let roomKey = '', pendingStamp = '', unread = 0, lastChatSeq = 0, lastAckCommand = 0, lastSeatAck = 0, previousSeat = null, lastPhase = '', toastTimer = 0;
   for (const sel of panel.querySelectorAll('[data-laps]')) { const [lo, hi] = sel.dataset.laps.split('-').map(Number); for (let n = lo; n <= hi; n++) sel.add(new Option(`${n} laps`, String(n))); }
 
@@ -117,7 +117,11 @@ export function createRoomUI(room, { show, gameRunning = () => false, unlockAudi
   function renderRoster(state) {
     const list = $('playersList'), me = state.members.find(m => m.id === state.id), wanted = new Set(state.members.map(m => m.id));
     for (const [id, card] of cards) if (!wanted.has(id)) { card.li.remove(); cards.delete(id); }
-    const showSeats = state.phase === 'lobby' && !!me, occupied = new Set(state.members.map(m => m.cabinet));
+    // Drivers admitted during a race wait in their reserved car until the next one
+    // (Daytona USA Web): a striped card in the grid, also in the menu during the race.
+    const waiting = (state.waiters || []).filter(w => w.cabinet && !state.members.some(m => m.cabinet === w.cabinet));
+    for (const [id, li] of waitCards) if (!waiting.some(w => w.id === id)) { li.remove(); waitCards.delete(id); }
+    const showSeats = state.phase === 'lobby' && !!me, occupied = new Set([...state.members.map(m => m.cabinet), ...waiting.map(w => w.cabinet)]);
     for (const [seat, node] of emptySeats) if (!showSeats || occupied.has(seat)) { node.remove(); emptySeats.delete(seat); }
     const nodes = new Map();
     for (const m of state.members) {
@@ -141,6 +145,21 @@ export function createRoomUI(room, { show, gameRunning = () => false, unlockAudi
       c.remove.hidden = !state.isHost || state.phase !== 'lobby' || m.id === state.id; c.remove.title = `Remove ${m.name}`; c.remove.setAttribute('aria-label', `Remove ${m.name} from the room`);
       nodes.set(m.cabinet, c.li);
     }
+    for (const w of waiting) {
+      let li = waitCards.get(w.id);
+      if (!li) {
+        li = document.createElement('li'); li.className = 'driver-card driver-waiting';
+        const number = document.createElement('span'), info = document.createElement('div'), name = document.createElement('strong'), role = document.createElement('small'), status = document.createElement('span');
+        number.className = 'cabinet-number'; info.className = 'driver-info'; status.className = 'driver-status'; status.textContent = 'NEXT RACE';
+        info.append(name, role); li.append(number, info, status); waitCards.set(w.id, li);
+      }
+      const color = carColor(w.cabinet), [number, info] = li.children;
+      li.style.setProperty('--car-color', color.color); li.dataset.seat = w.cabinet; li.classList.toggle('own-seat', w.id === state.id);
+      number.textContent = String(w.cabinet).padStart(2, '0'); number.title = `Car ${w.cabinet} · ${color.name}`;
+      info.children[0].textContent = w.name; info.children[0].title = w.name;
+      info.children[1].textContent = `${w.id === state.id ? 'You · ' : ''}Waiting · car reserved for the next race`;
+      nodes.set(w.cabinet, li);
+    }
     if (showSeats) for (let seat = 1; seat <= SEATS; seat++) if (!occupied.has(seat)) {
       let node = emptySeats.get(seat);
       if (!node) {
@@ -157,7 +176,8 @@ export function createRoomUI(room, { show, gameRunning = () => false, unlockAudi
     [...nodes].sort((a, b) => a[0] - b[0]).forEach(([, node], i) => { if (list.children[i] !== node) list.insertBefore(node, list.children[i] || null); });
     while (list.children.length > nodes.size) list.lastElementChild.remove();
     $('openSeatCount').hidden = showSeats;
-    $('openSeatCount').textContent = state.phase === 'waiting' ? 'You are in the queue: you take a seat when the host returns everyone to the room.' : state.phase === 'pending' ? 'Your host is reviewing the request.' : state.phase === 'error' ? 'Return to room selection to try another invitation.' : state.phase === 'connecting' ? 'Preparing your private room…' : state.phase === 'playing' ? 'The linked race is running.' : '';
+    const myWait = (state.waiters || []).find(w => w.id === state.id);
+    $('openSeatCount').textContent = state.phase === 'waiting' ? (myWait?.cabinet ? `Car ${myWait.cabinet} is reserved for you: you take it when the host returns everyone to the room.` : 'You are in the queue: you take a seat when the host returns everyone to the room.') : state.phase === 'pending' ? 'Your host is reviewing the request.' : state.phase === 'error' ? 'Return to room selection to try another invitation.' : state.phase === 'connecting' ? 'Preparing your private room…' : state.phase === 'playing' ? 'The linked race is running.' : '';
     const status = $('seatStatus'); status.hidden = !showSeats;
     if (state.lastAck?.action === 'move-seat' && state.lastAck.command > lastSeatAck) { lastSeatAck = state.lastAck.command; status.textContent = state.lastAck.accepted ? `Your car is ${me?.cabinet}. Confirm Ready again.` : state.lastAck.reason; }
     else if (state.seatPending) status.textContent = `Moving to car ${state.seatPending}…`;
@@ -197,7 +217,7 @@ export function createRoomUI(room, { show, gameRunning = () => false, unlockAudi
   const NOTICE = {
     joined: e => [`${e.name} joined the room`, e.cabinet ? `Car ${e.cabinet} · ready to join the grid` : 'Driver · ready to join the grid', 'in'],
     request: e => [`${e.name} asked to join`, e.inGame ? 'Review the request when you return to the lobby.' : 'Admit or decline the request in the grid.', 'in'],
-    waiting: e => [`${e.name} is waiting`, 'Seat kept for the next race', 'in'],
+    waiting: e => [`${e.name} is waiting`, e.cabinet ? `Car ${e.cabinet} reserved for the next race` : 'Seat kept for the next race', 'in'],
     left: e => [`${e.name} left the room`, e.inGame ? 'Driver disconnected · their car stays on track, pass-through' : 'Driver disconnected · their seat is free', 'out'],
     stalled: e => [`${e.name} stopped responding`, 'Out of this race · back in the room for the next one', 'out'],
     offline: () => ['Invitation service reconnecting', 'Drivers already in the room stay connected. New invitations wait until it is back.', 'warn'],
@@ -258,7 +278,7 @@ export function createRoomUI(room, { show, gameRunning = () => false, unlockAudi
       if (key !== roomKey) {
         invitationMenu.close(); roomKey = key; pendingStamp = ''; lastChatSeq = 0; lastAckCommand = 0; lastSeatAck = 0; previousSeat = null;
         $('seatStatus').textContent = ''; messages.clear(); $('chatLog').replaceChildren(); chatFollow.reset(); cards.clear(); emptySeats.clear();
-        $('playersList').replaceChildren(); $('chatInput').value = ''; $('chatLength').textContent = '0/240'; markRead(); mobileTab('grid');
+        waitCards.clear(); $('playersList').replaceChildren(); $('chatInput').value = ''; $('chatLength').textContent = '0/240'; markRead(); mobileTab('grid');
       }
       if (state.phase === 'idle') { invitationMenu.setAvailable(false); noticeLines.length = 0; $('roomNotice').hidden = true; lastSignaling = true; return; }
       if (['lobby', 'playing', 'waiting'].includes(state.phase) && state.signaling !== lastSignaling) { lastSignaling = state.signaling; announce({ kind: state.signaling ? 'online' : 'offline' }); }
@@ -268,12 +288,11 @@ export function createRoomUI(room, { show, gameRunning = () => false, unlockAudi
       const out = state.phase === 'playing' && state.members.find(m => m.id === state.id)?.connection === 'stalled';
       $('roomTitle').textContent = out ? 'Out of this race' : state.phase === 'waiting' ? 'Waiting for the next race' : state.phase === 'pending' ? 'Request sent' : state.phase === 'error' ? 'Room unavailable' : state.roomName || (state.isHost ? 'Your starting grid' : 'Your race room');
       $('roomPhase').textContent = out ? 'WAITING' : { lobby: 'LOBBY', playing: 'ON TRACK', pending: 'WAITING', error: 'OFFLINE', connecting: 'CONNECTING' }[state.phase] || 'LOBBY';
-      $('roomCount').textContent = state.phase === 'waiting' ? `In queue · ${state.waiters?.length || 1} waiting` : state.phase === 'pending' ? 'Awaiting host' : `${state.members.length} / ${SEATS} drivers`;
+      $('roomCount').textContent = state.phase === 'waiting' ? `In queue · ${state.waiters?.length || 1} waiting` : state.phase === 'pending' ? 'Awaiting host' : `${state.members.length} / ${SEATS} drivers${state.waiters?.length ? ` · ${state.waiters.length} waiting` : ''}`;
       const url = new URL(location.href); url.hash = new URLSearchParams({ room: state.code }).toString();
       $('inviteLink').value = state.code ? url.href : ''; $('roomCode').textContent = state.code || 'Connecting…';
       invitationMenu.setAvailable(state.isHost && !!state.code && state.phase === 'lobby');
       for (const [k, id] of Object.entries(SETTING_IDS)) { $(id).value = String(state.settings[k]); $(id).disabled = !state.isHost || state.phase !== 'lobby'; }
-      $('roomSettingsHint').textContent = state.isHost ? 'Shared by the grid. Changes reset Ready.' : 'Your host chooses these for everyone.';
       $('readyCount').textContent = state.phase === 'playing' ? `${state.members.filter(m => !['left', 'stalled'].includes(m.connection)).length} on track` : `${state.members.filter(m => m.ready).length} ready`;
       renderRoster(state); renderPending(state); renderChat(state);
       const me = state.members.find(m => m.id === state.id);

@@ -1,5 +1,6 @@
 import {parseInvitation, SEATS} from './room.js';
-export const BUILD_ID='d2pe-rooms-v1';
+import {BUILD_ID} from './version.js';
+export {BUILD_ID};   // the game version (version.js): rooms of another version list as "Different version"
 export const ROOM_TTL_MS=90000,ROOM_PULSE_MS=30000;
 export const DIRECTORY_IDLE_MS=5*60*1000;
 const states=new Set(['open','full','starting','racing','reconnecting']);

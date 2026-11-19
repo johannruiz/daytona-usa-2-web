@@ -3,9 +3,15 @@ import {turnClient, maintainIceConfiguration} from './turn-client.js';
 // Browser transport of src/comm/central_link.c (DAYTO_WEB build): the host
 // cabinet is node 0 (MASTER) and the central relay. Every field each cabinet
 // publishes one record (node, sequence, 848-byte block); the host forwards
-// every record to all cabinets. The engine waits (JSPI) for the record of
-// each node DAYTO_CENTRAL_DELAY fields back, so all cabinets see the other
-// cars with one fixed latency. Rooms use PeerJS signalling, as Daytona USA
+// every record to all cabinets. In lockstep mode (?link=lockstep) the engine
+// waits for the record of each node DAYTO_CENTRAL_DELAY fields back, so all
+// cabinets see the other cars with one fixed latency.
+// Storage (2026-11-18, pthreads build, as Scud Race Web): the engine runs in a
+// worker (engine-worker.js) that never returns to its event loop, so every
+// node's records, joined states, the linked flag and the transit estimates
+// live in a SharedArrayBuffer (`shared`, layout in `layout`) that the engine
+// reads directly; a counter (NOTIFY) is bumped with Atomics.notify on every
+// change, which wakes the lockstep wait. Rooms use PeerJS signalling, as Daytona USA
 // Web does (web/site/vendor/peerjs.min.js); data flows peer to peer.
 // Asynchronous mode (default, Claude 2026-11-12, after Daytona USA Web's
 // MotionChannel/LatestFlow): field records travel on a second, negotiated,
@@ -16,6 +22,12 @@ import {turnClient, maintainIceConfiguration} from './turn-client.js';
 const RING = 32, SLOT = 848, PREFIX = 'd2pe-';
 const MAX_NODES = 16;   // Daytona USA 2 links 2-16 cabinets (CL_MAX_NODES in src/comm/central_link.c)
 const MOTION_LABEL = 'd2-motion-v1', MOTION_BUFFER_LIMIT = 16384;
+// Shared layout (bytes): head Int32[4] (OPEN, LINKED, NOTIFY, POSE), joined Int32[16],
+// published Float64[16], transit Float64[16] (fields), tags Float64[16 * RING],
+// blocks Uint8[16 * RING * SLOT]. A slot being rewritten has tag -1 meanwhile.
+const HEAD = { OPEN: 0, LINKED: 1, NOTIFY: 2, POSE: 3 };
+const LAYOUT = (() => { const joined = 16, pub = joined + 4 * MAX_NODES, transit = pub + 8 * MAX_NODES, tags = transit + 8 * MAX_NODES, blocks = tags + 8 * MAX_NODES * RING;
+  return { headWords: 4, ...HEAD, nodes: MAX_NODES, ring: RING, slot: SLOT, joined, pub, transit, tags, blocks, bytes: blocks + MAX_NODES * RING * SLOT }; })();
 // Test-only: this cabinet's own network is bad: ?netsim=delayMs,jitterMs,lossPercent
 // delays (and drops records) on everything it receives and sends, once per direction.
 const NETSIM = (() => { const m = /[?&]netsim=([\d.]+)(?:,([\d.]+))?(?:,([\d.]+))?/.exec(globalThis.location?.search || '');
@@ -65,10 +77,14 @@ export class CentralLinkNet {
     this.isHost = false; this.peer = null; this.conns = []; this.hostConn = null;
     this.nodes = 0; this.node = 0; this.delay = 2;
     this.fieldHz = 60;   // the engine's field rate (main.js sets it before each linked start)
-    this.joinedState = Array(MAX_NODES).fill(0); this.isLinked = false;
-    this.tags = [...Array(MAX_NODES)].map(() => new Float64Array(RING).fill(-1));
-    this.blocks = [...Array(MAX_NODES)].map(() => [...Array(RING)].map(() => new Uint8Array(SLOT)));
-    this.pub = Array(MAX_NODES).fill(0); this.waiters = [];
+    // Shared with the engine worker (see the layout above); plain memory where
+    // the page is not cross-origin isolated (the engine then cannot start anyway).
+    const L = this.layout = LAYOUT, sab = this.shared = globalThis.crossOriginIsolated ? new SharedArrayBuffer(L.bytes) : null, buf = sab || new ArrayBuffer(L.bytes);
+    this.head = new Int32Array(buf, 0, L.headWords); this.head[HEAD.OPEN] = 1;
+    this.joinedState = new Int32Array(buf, L.joined, MAX_NODES);
+    this.tags = [...Array(MAX_NODES)].map((_, j) => new Float64Array(buf, L.tags + 8 * RING * j, RING).fill(-1));
+    this.blocks = [...Array(MAX_NODES)].map((_, j) => [...Array(RING)].map((_, r) => new Uint8Array(buf, L.blocks + (j * RING + r) * SLOT, SLOT)));
+    this.pub = new Float64Array(buf, L.pub, MAX_NODES); this.transit = new Float64Array(buf, L.transit, MAX_NODES);
     this.session = false;
     this.rtt = Array(MAX_NODES).fill(null); this.motionSent = 0; this.motionDropped = 0; this.motionReceived = 0; this.reliableRecords = 0;
     this.pingTimer = null; this.netsimLast = 0;
@@ -181,6 +197,7 @@ export class CentralLinkNet {
     this.pingTimer = setInterval(() => {
       if (!this.session) return;
       if (this.isHost) this.broadcast({ t: 'lping', ts: performance.now(), rtt: this.rtt });
+      this.updateTransit();
     }, 250);
   }
   // One-way transit from node j to this cabinet, in fields (engine prediction).
@@ -196,6 +213,14 @@ export class CentralLinkNet {
     return expected > 60 ? Math.max(0, 1 - this.recordCount[j] / expected) : null;
   }
   get id() { return this.peer?.id || ''; }
+  // Test only (chrome_mp.mjs MP_POSELOG): setting poseLog to an array asks the
+  // engine worker to record every posed field; its rows arrive in batches.
+  get poseLog() { return this.poseRows ?? null; }
+  set poseLog(v) { this.poseRows = v; Atomics.store(this.head, HEAD.POSE, v ? 1 : 0); }
+  get isLinked() { return Atomics.load(this.head, HEAD.LINKED) === 1; }
+  set isLinked(on) { Atomics.store(this.head, HEAD.LINKED, on ? 1 : 0); this.wake(); }
+  // The engine reads each node's transit (fields) from the shared buffer.
+  updateTransit() { for (let j = 0; j < MAX_NODES; j++) this.transit[j] = this.transitFields(j); }
   // conns: the admitted guests in node order; extra(conn) adds per-cabinet data.
   startSession(conns, extra = () => ({}), shared = {}) {
     if (!this.isHost) return;
@@ -215,7 +240,7 @@ export class CentralLinkNet {
       return;
     }
     if (d.t === 'start') { this.delay = d.delay; this.session = true; this.onSession(d); }
-    else if (d.t === 'lping') { if (Array.isArray(d.rtt) && !this.isHost) d.rtt.forEach((v, i) => { this.rtt[i] = v; }); const pong = () => from.send({ t: 'lpong', ts: d.ts }); if (NETSIM) setTimeout(pong, NETSIM.delay); else pong(); }
+    else if (d.t === 'lping') { if (Array.isArray(d.rtt) && !this.isHost) { d.rtt.forEach((v, i) => { this.rtt[i] = v; }); this.updateTransit(); } const pong = () => from.send({ t: 'lpong', ts: d.ts }); if (NETSIM) setTimeout(pong, NETSIM.delay); else pong(); }
     else if (d.t === 'lpong') {
       if (this.isHost && from.node) {
         const now = performance.now(), list = (this.rttSamples ??= [...Array(MAX_NODES)].map(() => []))[from.node];
@@ -223,19 +248,21 @@ export class CentralLinkNet {
         this.rtt[from.node] = Math.round(Math.min(...list.map(x => x[1])));
       }
     }
-    else if (d.t === 'joined') { this.joinedState[d.node] = d.state; if (this.isHost) this.broadcast(d, from); this.wake(); }
+    else if (d.t === 'joined') { if (d.node >= 0 && d.node < MAX_NODES) Atomics.store(this.joinedState, d.node, d.state); if (this.isHost) this.broadcast(d, from); this.wake(); }
     else if (d.t === 'linked') { this.isLinked = true; }
     else this.onMessage(d, from);
   }
   broadcast(msg, except) { for (const c of this.conns) if (c !== except && c.open) c.send(msg); }
   forward(bytes, except) { const copy = bytes.slice().buffer; for (const c of this.conns) if (c !== except && c.open) this.sendRecord(c, copy); }
-  leave(node) { if (node === undefined) return; this.joinedState[node] = 2; this.wake(); this.onStatus(`Cabinet ${node + 1} left.`); }
+  leave(node) { if (node === undefined) return; Atomics.store(this.joinedState, node, 2); this.wake(); this.onStatus(`Cabinet ${node + 1} left.`); }
   disconnect() { this.stopIce?.(); this.stopIce = null; clearInterval(this.pingTimer); try { this.peer?.destroy(); } catch {} this.peer = null; this.conns = []; this.hostConn = null; this.isHost = false; this.session = false; }
   // ---- engine transport (src/comm/central_link.c, DAYTO_WEB) --------------
-  open(nodes, node) { this.nodes = nodes; this.node = node; return true; }
+  // The engine worker calls these through engine-host.js messages; it reads
+  // records, states and transit from the shared buffer itself.
+  open(nodes, node) { this.nodes = nodes; this.node = node; this.updateTransit(); return true; }
   close() { this.setJoined(2); }
   setJoined(state) {
-    this.joinedState[this.node] = state;
+    Atomics.store(this.joinedState, this.node, state); this.wake();
     const msg = { t: 'joined', node: this.node, state };
     if (this.isHost) this.broadcast(msg); else this.hostConn?.send(msg);
   }
@@ -243,7 +270,9 @@ export class CentralLinkNet {
   setLinked() { this.isLinked = true; this.broadcast({ t: 'linked' }); }
   linked() { return this.isLinked; }
   store(node, seq, block) {
-    const r = seq % RING; this.blocks[node][r].set(block); this.tags[node][r] = seq;
+    if (node >= MAX_NODES || block.length < SLOT) return;
+    // The engine wrote its own records into the buffer already (tag set): not again.
+    const r = seq % RING; if (this.tags[node][r] !== seq) { this.tags[node][r] = -1; this.blocks[node][r].set(block.subarray(0, SLOT)); this.tags[node][r] = seq; }
     if (this.onRecord && seq + 1 > this.pub[node]) this.onRecord(node, seq, block);
     if (seq + 1 > this.pub[node]) this.pub[node] = seq + 1;
     this.wake();
@@ -255,19 +284,7 @@ export class CentralLinkNet {
   }
   published(j) { return this.pub[j]; }
   fetch(j, want) { const r = want % RING; return this.tags[j][r] === want ? this.blocks[j][r] : null; }
-  wait(j, want, timeout) {
-    if (this.pub[j] > want) return Promise.resolve(0);
-    if (this.joinedState[j] === 2) return Promise.resolve(1);
-    return new Promise(resolve => {
-      const w = { j, want, resolve, timer: setTimeout(() => { this.waiters = this.waiters.filter(x => x !== w); resolve(1); }, timeout) };
-      this.waiters.push(w);
-    });
-  }
-  wake() {
-    if (!this.waiters.length) return;
-    this.waiters = this.waiters.filter(w => {
-      if (this.pub[w.j] > w.want || this.joinedState[w.j] === 2) { clearTimeout(w.timer); w.resolve(this.pub[w.j] > w.want ? 0 : 1); return false; }
-      return true;
-    });
-  }
+  // Lockstep waits happen in the engine worker (engine-worker.js makeLink),
+  // on Atomics.wait over NOTIFY: every record and state change wakes them.
+  wake() { if (this.shared) { Atomics.add(this.head, HEAD.NOTIFY, 1); Atomics.notify(this.head, HEAD.NOTIFY); } }
 }

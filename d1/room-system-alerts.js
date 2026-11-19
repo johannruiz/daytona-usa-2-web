@@ -14,7 +14,7 @@ const active = s => s && [...(s.members || []), ...(s.waiters || [])].some(p => 
 export function createRoomSystemAlerts({ NotificationAPI = globalThis.Notification, serviceWorkers = globalThis.navigator?.serviceWorker, secure = globalThis.isSecureContext,
   onClick = () => {}, background = () => document.hidden || !document.hasFocus(), focusWindow = () => globalThis.focus(),
   token = () => globalThis.crypto?.randomUUID?.() || Date.now() + '-' + Math.random().toString(36).slice(2),
-  workerURL = new URL('../room-alerts-sw.js', import.meta.url), icon = new URL('../img/daytona-usa-2-logo.png', import.meta.url).href } = {}) {
+  workerURL = new URL('../coi-sw.js', import.meta.url), icon = new URL('../img/daytona-usa-2-logo.png', import.meta.url).href } = {}) {
   let state = null, key = '', stamp = '', live = false, asked = false, registration = null, workerPromise = null;
   const notices = new Set();
   const allowed = () => secure && NotificationAPI?.permission === 'granted';

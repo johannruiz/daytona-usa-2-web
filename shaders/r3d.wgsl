@@ -46,6 +46,12 @@ struct VOut {
 @group(2) @binding(2) var<storage, read> instances: array<u32>;   // R3DGpuInstance: 20 words
 @group(2) @binding(3) var<storage, read> cpu_vertices: array<u32>; // R3DVertex: 20 words
 @group(2) @binding(4) var<storage, read> colours: array<u32>;
+// Display interpolation (2026-11-18): each instance's matrix in the previous
+// scene (12 floats; R3DScene::interp_m) unless its word 17 is R3D_NO_PREV, and a
+// CPU-path vertex's position there (R3DVertex::prev); vp.quality.w is how far the
+// image is from that scene (0) to this one (1). The matrices are mixed, which
+// is the same as mixing the transformed positions.
+@group(2) @binding(5) var<storage, read> prev_m: array<f32>;
 const REF_CPU = 0xFFFFFFFFu; const GPU_DOUBLE_SIDED = 1u; const GPU_TABLE = 2u;
 
 fn sf(i: u32) -> f32 { return bitcast<f32>(statics[i]); }
@@ -58,17 +64,27 @@ fn cf(i: u32) -> f32 { return bitcast<f32>(cpu_vertices[i]); }
   var v: VIn;
   if (r.y == REF_CPU) {
     let b = r.x * 20u;
-    v.pos = vec3<f32>(cf(b), cf(b + 1u), cf(b + 2u)); v.nrm = vec3<f32>(cf(b + 3u), cf(b + 4u), cf(b + 5u));
+    v.pos = vec3<f32>(cf(b), cf(b + 1u), cf(b + 2u));
+    if (vp.quality.w < 1.0) { v.pos = mix(vec3<f32>(cf(b + 15u), cf(b + 16u), cf(b + 17u)), v.pos, vp.quality.w); }
+    v.nrm = vec3<f32>(cf(b + 3u), cf(b + 4u), cf(b + 5u));
     v.uv = vec2<f32>(cf(b + 6u), cf(b + 7u)); v.color = unpack4x8unorm(cpu_vertices[b + 8u]);
     v.tex = cpu_vertices[b + 9u]; v.flags = cpu_vertices[b + 10u];
     v.params = vec3<f32>(cf(b + 11u), cf(b + 12u), cf(b + 13u)); v.lod_base = cf(b + 18u); v.micro = cpu_vertices[b + 19u];
     return emit(v);
   }
   let b = r.x * 24u; let ib = r.y * 20u;
-  let c0 = vec3<f32>(if32(ib), if32(ib + 1u), if32(ib + 2u));
-  let c1 = vec3<f32>(if32(ib + 3u), if32(ib + 4u), if32(ib + 5u));
-  let c2 = vec3<f32>(if32(ib + 6u), if32(ib + 7u), if32(ib + 8u));
-  let tr = vec3<f32>(if32(ib + 9u), if32(ib + 10u), if32(ib + 11u));
+  var c0 = vec3<f32>(if32(ib), if32(ib + 1u), if32(ib + 2u));
+  var c1 = vec3<f32>(if32(ib + 3u), if32(ib + 4u), if32(ib + 5u));
+  var c2 = vec3<f32>(if32(ib + 6u), if32(ib + 7u), if32(ib + 8u));
+  var tr = vec3<f32>(if32(ib + 9u), if32(ib + 10u), if32(ib + 11u));
+  let prev = instances[ib + 17u]; let t = vp.quality.w;
+  if (prev != 0xFFFFFFFFu && t < 1.0) {
+    let pb = r.y * 12u;
+    c0 = mix(vec3<f32>(prev_m[pb], prev_m[pb + 1u], prev_m[pb + 2u]), c0, t);
+    c1 = mix(vec3<f32>(prev_m[pb + 3u], prev_m[pb + 4u], prev_m[pb + 5u]), c1, t);
+    c2 = mix(vec3<f32>(prev_m[pb + 6u], prev_m[pb + 7u], prev_m[pb + 8u]), c2, t);
+    tr = mix(vec3<f32>(prev_m[pb + 9u], prev_m[pb + 10u], prev_m[pb + 11u]), tr, t);
+  }
   let inv_scale = if32(ib + 12u); let inst_alpha = if32(ib + 13u); let lod_k = if32(ib + 14u);
   let inst_tex = instances[ib + 15u]; let color_base = instances[ib + 16u];
   let kind = statics[b + 23u];

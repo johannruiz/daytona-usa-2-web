@@ -1,6 +1,6 @@
 # Daytona USA 2 Power Edition — Web
 
-Version 0.9.8
+Version 0.10.0
 
 A static recompilation of the arcade game *Daytona USA 2 Power Edition* (Sega Model 3, 1998), running in the browser with WebAssembly and WebGPU. Single player and online linked races for up to 16 drivers.
 
@@ -23,7 +23,7 @@ The ZIP is read in your browser and stored only on your device. It is never uplo
 2. In **Settings → Pages**, publish from that branch and folder.
 3. Open the page and choose your `dayto2pe.zip`.
 
-The `.nojekyll` file must stay so that every file is served as is. Any other static web server works too.
+The `.nojekyll` file must stay so that every file is served as is. The game runs on several threads, which needs a cross-origin isolated page: `coi-sw.js` adds the required headers on hosts that cannot set them, such as GitHub Pages (the first visit reloads once). Any other static web server works too, over HTTPS or on localhost.
 
 ## Controls
 

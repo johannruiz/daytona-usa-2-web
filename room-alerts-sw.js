@@ -4,7 +4,7 @@
 const appURL = new URL('./', self.location.href);
 const KINDS = ['joined', 'request', 'waiting', 'left', 'stalled'];
 const sameApp = client => { try { const url = new URL(client.url); return url.origin === appURL.origin && (url.pathname === appURL.pathname || url.pathname === appURL.pathname + 'index.html'); } catch { return false; } };
-self.addEventListener('install', event => event.waitUntil(self.skipWaiting()));
+self.addEventListener('install', event => event.waitUntil(self.skipWaiting()));   // also loaded by coi-sw.js
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
 self.addEventListener('message', event => {
   const client = event.source, data = event.data;

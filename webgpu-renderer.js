@@ -12,7 +12,7 @@ const TILEGEN_SIZE = 0x190000, TILE_CHUNK = 4096, TILE_CHUNKS = TILEGEN_SIZE / T
 const VERTEX_BYTES = 80, VIEWPORT_FLOATS = 56, DRAW_STRIDE = 256;
 // GPU vertex transform (web_bridge.cpp WebFrame 29..38, r3d_scene.h): refs,
 // model-space vertices kept across frames, instances, colour-table entries.
-const PACKET_WORDS = 39, REF_BYTES = 8, STATIC_BYTES = 96, INSTANCE_BYTES = 80;
+const PACKET_WORDS = 42, REF_BYTES = 8, STATIC_BYTES = 96, INSTANCE_BYTES = 80;
 
 export function computeLayout(winW, winH, maxAspect) {   // r3d_renderer.cpp compute_layout
   const aspect = winH > 0 ? winW / winH : 4 / 3;
@@ -77,7 +77,7 @@ export class Daytona2Renderer {
     this.r3dLayout1 = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: 192 } }] });
     const layout = device.createPipelineLayout({ bindGroupLayouts: [this.r3dLayout0, this.r3dLayout1] });
     const storage = { type: 'read-only-storage' };
-    this.r3dLayout2 = device.createBindGroupLayout({ entries: [0, 1, 2, 3, 4].map(binding => ({ binding, visibility: GPUShaderStage.VERTEX, buffer: storage })) });
+    this.r3dLayout2 = device.createBindGroupLayout({ entries: [0, 1, 2, 3, 4, 5].map(binding => ({ binding, visibility: GPUShaderStage.VERTEX, buffer: storage })) });
     const pullLayout = device.createPipelineLayout({ bindGroupLayouts: [this.r3dLayout0, this.r3dLayout1, this.r3dLayout2] });
     this.pull = { refs: null, statics: null, instances: null, cpu: null, colours: null, group: null, generation: -1, uploaded: 0 };
     this.gpuMode = false;
@@ -136,6 +136,13 @@ export class Daytona2Renderer {
     const queue = this.device.queue, P = this.pull;
     const put = (name, ptr, bytes) => { this.ensurePull(name, bytes); if (bytes) queue.writeBuffer(P[name], 0, heap.buffer, ptr, bytes); };
     put('refs', u32[31], u32[30] * REF_BYTES);
+    // Display interpolation: each instance's matrix in the previous scene (packet
+    // word 41) when the scene continues the one drawn before (word 40, word 39
+    // is its own number): never from another one (a build the display never
+    // got: models flickered and the road cracked, 2026-11-18).
+    const prevSerial = P.serial; P.serial = u32[39];
+    this.interpOK = this.interp && u32[40] !== 0 && u32[40] === prevSerial;
+    if (this.interpOK) put('prevm', u32[41], u32[32] * 48);
     put('instances', u32[33], u32[32] * INSTANCE_BYTES);
     put('colours', u32[35], u32[34] * 4);
     put('cpu', u32[2], u32[1] * VERTEX_BYTES);
@@ -147,7 +154,7 @@ export class Daytona2Renderer {
       this.stats.staticVertices = count; P.uploaded = count;
     }
     if (!P.group) P.group = this.device.createBindGroup({ layout: this.r3dLayout2, entries:
-      ['refs', 'statics', 'instances', 'cpu', 'colours'].map((name, binding) => ({ binding, resource: { buffer: P[name] } })) });
+      ['refs', 'statics', 'instances', 'cpu', 'colours', 'prevm'].map((name, binding) => ({ binding, resource: { buffer: P[name] || P.instances } })) });
     this.vertexCount = u32[30];
   }
   // Upload what changed in the packet (scene, texture rows, 2D layers).
@@ -156,8 +163,10 @@ export class Daytona2Renderer {
     const device = this.device, queue = device.queue;
     if (u32[24] && u32[29]) {   // scene_changed, GPU transform
       this.gpuMode = true; this.uploadPull(heap, u32); this.stats.vertexUploads++;
-    } else if (u32[24]) {   // scene_changed
-      this.gpuMode = false;
+    } else if (!u32[24]) {   // the game shows the same image again: nothing to interpolate
+      this.interpOK = false;
+    } else {   // scene_changed, CPU transform
+      this.gpuMode = false; this.interpOK = false;
       const count = u32[1], bytes = count * VERTEX_BYTES;
       if (bytes > this.vertexCapacity) {
         this.vertexBuffer?.destroy();
@@ -206,7 +215,8 @@ export class Daytona2Renderer {
     const f32 = new Float32Array(heap.buffer, packet, 28);
     this.scrollFog = [f32[15], f32[16], f32[17], f32[18]]; this.scrollVp = [f32[19], f32[20], f32[21], f32[22]];
   }
-  render() {
+  // interpT (display interpolation, engine-host.js): where between the last two scenes to draw.
+  render(interpT = 1) {
     const device = this.device, rt0 = performance.now();
     const dpr = window.devicePixelRatio || 1;
     const cw = Math.max(1, Math.round(this.canvas.clientWidth * dpr)), ch = Math.max(1, Math.round(this.canvas.clientHeight * dpr));
@@ -216,6 +226,8 @@ export class Daytona2Renderer {
     const outH = this.classic ? SCREEN_H : Math.max(1, Math.round(SCREEN_H * lay.scale * this.renderScale));
     this.ensureTargets(outW, outH);
     const vps = this.viewports || new Float32Array(0), n = vps.length / VIEWPORT_FLOATS;
+    // Display interpolation: t from the previous scene (0) to this one (1); 1 = off.
+    const t = this.interp && this.interpOK && this.gpuMode ? Math.min(1, Math.max(0, interpT)) : 1;
     const sx = outW / lay.viewW, sy = outH / SCREEN_H, widen = lay.viewW / SCREEN_W;
     // Build all draws first so their uniforms go up in one write.
     const draws = [];
@@ -234,7 +246,7 @@ export class Daytona2Renderer {
       uniform.set(vps.subarray(o + 24, o + 28), 16);   // sun
       uniform.set(vps.subarray(o + 28, o + 32), 20);   // fog colour
       uniform.set(vps.subarray(o + 32, o + 36), 24);   // ambient, density, start
-      uniform[31] = 0; uniform[30] = v.full ? 2 * lay.gameX0 / lay.viewW : 0; uniform[29] = 1;   // quality.zw / aniso
+      uniform[31] = t; uniform[30] = v.full ? 2 * lay.gameX0 / lay.viewW : 0; uniform[29] = 1;   // quality.zw (w: interpolation) / aniso
       uniform.set(vps.subarray(o + 36, o + 52), 32);   // original light
       // WebGPU rejects a viewport outside the target (the whole frame is then
       // lost: black screens in 4:3 while MANUAL/AUTO panels slide in from

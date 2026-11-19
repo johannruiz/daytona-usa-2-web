@@ -9,7 +9,7 @@
 // the race setup or switching between single and linked play after starting
 // reloads the page and continues where the player was (sessionStorage intent).
 import { Daytona2Renderer } from './webgpu-renderer.js';
-import { EngineHost, FIELD_MS_60 } from './engine-host.js';
+import { EngineHost, FIELD_MS, FIELD_MS_60 } from './engine-host.js';
 import { CLIENT_VERSION, RELEASE_DATE } from './version.js';
 import { AudioOutput } from './audio.js';
 import { Controls } from './input.js';
@@ -19,6 +19,7 @@ import { createKeyboardControls } from './d1/keyboard-controls.js';
 import { createControllerControls } from './d1/controller-controls.js';
 import { createGamepadRumble } from './d1/haptics.js';
 import { startRumbleLog } from './rumble-log.js';
+import { startCadenceLog } from './cadence-log.js';
 import { createWheelControls } from './d1/wheel-controls.js';
 import { createTouchControls } from './d1/touch.js';
 import { mountMenuGamepad } from './d1/menu-gamepad.js';
@@ -47,17 +48,20 @@ const BACKUP = '/save/cabinet.backup.bin', INTENT = 'd2-intent', RESUME = 'd2-ro
 const storage = { getItem: k => { try { return localStorage.getItem(k); } catch { return null; } }, setItem: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 const mobile = !!navigator.userAgentData?.mobile || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const settings = loadSettings(storage, { mobile });
-const display = { mode: 'enhanced', scale: 1, ...JSON.parse(storage.getItem(DISPLAY_ID) || '{}') };
+const display = { mode: 'enhanced', scale: 1, motion: 'original', ...JSON.parse(storage.getItem(DISPLAY_ID) || '{}') };
+if (params.get('smoothmotion')) display.motion = params.get('smoothmotion') === '1' ? 'smooth' : 'original';   // tests: ?smoothmotion=1 / 0 (?smooth is the link's)
 delete display.fps;   // the simulation rate is always shown (user, 2026-11-12)
 const held = new Set();
 let publicDirectory = null;
 let outOfRace = false, preparing = false;   // preparing: the cabinet notice until the first field   // this cabinet left the linked race after stopping (outOfRaceCheck)
 let host, renderer, engineReady, started = false, running = false, romReady = false, sessionKind = null, nvramName = 'cabinet';
-// 60 Hz by default (user, 2026-11-12: smooth on every display, the same
-// for every player of a room; tried 57.524 by default on 2026-11-13 and kept
-// 60 on 2026-11-14); ?hz=57 runs the arcade's 57.524 Hz (remembered for the
-// tab), with the link counting its real field length (DAYTO_CENTRAL_FIELD_US).
-const fieldHz60 = (() => { try { const q = params.get('hz'); if (q) sessionStorage.setItem('d2-hz', q); return sessionStorage.getItem('d2-hz') !== '57'; } catch { return true; } })();
+// The arcade's 57.524 Hz by default (user, 2026-11-18, with the pthreads
+// build; 60 had been the default since 2026-11-14). ?hz=60 runs 60 fields/s in
+// single play only (remembered for the tab): linked play always runs the
+// original rate on every cabinet, with the link counting its real field
+// length (DAYTO_CENTRAL_FIELD_US), so cabinets never run at different rates.
+const fieldHz60Asked = (() => { try { const q = params.get('hz'); if (q) sessionStorage.setItem('d2-hz', q); return sessionStorage.getItem('d2-hz') === '60'; } catch { return false; } })();
+let fieldHz60 = fieldHz60Asked;
 const audio = new AudioOutput(), link = new CentralLinkNet();
 const status = (t, ok = false) => { $('status').textContent = t; html.classList.toggle('ready', ok); };
 
@@ -102,10 +106,12 @@ addEventListener('blur', () => { held.clear(); keyboardControls.reset(); });
 let settingsOpen = false;
 function applyDisplay() {
   storage.setItem(DISPLAY_ID, JSON.stringify(display));
-  if (renderer) { renderer.classic = display.mode === 'classic'; renderer.widescreen = !renderer.classic; renderer.renderScale = display.scale; }
-  $('graphicsSummary').textContent = display.mode === 'classic' ? 'Classic · 496 × 384' : `Enhanced · Widescreen${display.scale < 1 ? ` · ${Math.round(display.scale * 100)}%` : ''}`;
+  if (renderer) { renderer.classic = display.mode === 'classic'; renderer.widescreen = !renderer.classic; renderer.renderScale = display.scale; renderer.interp = display.motion === 'smooth'; }
+  if (host) host.interp = display.motion === 'smooth';   // display interpolation (engine-host.js refreshLoop)
+  $('graphicsSummary').textContent = (display.mode === 'classic' ? 'Classic · 496 × 384' : `Enhanced · Widescreen${display.scale < 1 ? ` · ${Math.round(display.scale * 100)}%` : ''}`) + (display.motion === 'smooth' ? ' · Smooth' : '');
   for (const r of document.querySelectorAll('[name="displayMode"]')) r.checked = r.value === display.mode;
   for (const r of document.querySelectorAll('[name="renderScale"]')) r.checked = Number(r.value) === display.scale;
+  for (const r of document.querySelectorAll('[name="displayMotion"]')) r.checked = r.value === display.motion;
 }
 const SLIDERS = [['rumble', 'rumbleIntensity', 'rumbleValue'], ['volume', 'volumeIntensity', 'volumeValue'], ['uiVolume', 'uiVolumeIntensity', 'uiVolumeValue'], ['joystickSensitivity', 'joystickSensitivity', 'joystickSensitivityValue'], ['joystickDeadzone', 'joystickDeadzone', 'joystickDeadzoneValue']];
 let uiGain = null;
@@ -133,6 +139,7 @@ for (const [key, id] of SLIDERS) $(id).addEventListener('input', e => changeSett
 for (const id of ['vibrationEnabled', 'settingsVibrationEnabled']) $(id).addEventListener('change', e => changeSetting('vibrationEnabled', e.target.checked));
 for (const r of document.querySelectorAll('[name="displayMode"]')) r.addEventListener('change', e => { if (e.target.checked) { display.mode = e.target.value; applyDisplay(); } });
 for (const r of document.querySelectorAll('[name="renderScale"]')) r.addEventListener('change', e => { if (e.target.checked) { display.scale = Number(e.target.value); applyDisplay(); } });
+for (const r of document.querySelectorAll('[name="displayMotion"]')) r.addEventListener('change', e => { if (e.target.checked) { display.motion = e.target.value; applyDisplay(); } });
 syncSettings(); applyDisplay();
 
 const settingsTabs = [...document.querySelectorAll('#settingsModal > .settings-tabs [role="tab"]')];
@@ -240,11 +247,10 @@ html.classList.add('launcher-open');
 // ---- engine and ROM --------------------------------------------------------
 async function loadEngine() {
   if (!('gpu' in navigator)) throw new Error('This browser has no WebGPU. Use a current Chrome, Edge or another WebGPU browser.');
-  if (!('Suspending' in WebAssembly)) throw new Error('This browser lacks WebAssembly JSPI (Chrome/Edge 137+).');
   host = new EngineHost({ audio, input: controls, link, onField: h => onField(h) });
   if (fieldHz60) host.fieldMs = FIELD_MS_60;
   await host.load('./daytona2.js');
-  host.module.daytonaHost.backupSaved = path => { const b = host.readFile(path); if (b) saveStored(nvramName, b); };
+  host.backupSaved = bytes => saveStored(nvramName, bytes);   // the engine worker sends the saved file
   return host;
 }
 engineReady = loadEngine();
@@ -258,7 +264,7 @@ function romLoaded(text) {
 async function importZip(file) {
   await engineReady;
   status('Checking ROM chips…');
-  const r = host.importROM(new Uint8Array(await file.arrayBuffer()));
+  const r = await host.importROM(new Uint8Array(await file.arrayBuffer()));
   if (!r.ok) {
     status(r.code === 1 ? 'This is not a readable ZIP.' : r.code === 2 ? `Missing or modified chip: ${r.missing}. Daytona USA 2 Power Edition (dayto2pe) is required.` : 'ROM import failed.');
     return { ok: false, invalid: r.code === 1 || r.code === 2 };
@@ -281,7 +287,7 @@ async function devRoms() {
   try { host.module.FS.mkdir('/roms'); } catch {}
   for (const n of ['crom', 'banked_crom', 'vrom', 'audiocpu', 'samples', 'dsb2_mpegcpu', 'dsb2_mpeg']) {
     const r = await fetch(`./dev-roms/${n}.bin`); if (!r.ok) throw new Error('dev ROM missing: ' + n);
-    host.writeFile(`/roms/${n}.bin`, new Uint8Array(await r.arrayBuffer()));
+    await host.writeRegion(n, new Uint8Array(await r.arrayBuffer()));
   }
   romLoaded('Development ROM regions loaded.');
 }
@@ -335,15 +341,17 @@ async function startEngine({ backup, env = {} }) {
   applyDisplay();
   host.renderer = renderer;
   host.unpaced = params.has('unpaced'); host.burst = Number(params.get('burst') || 1);   // benchmark: run fields back to back
-  if (params.has('noaudio')) host.module.daytonaHost.audio = () => {};
+  if (params.has('noaudio')) audio.setMuted(true);
   if (params.has('norender')) host.renderer = null;
   window.__d2 = { host, renderer, controls, room, audio };   // debugging aid
+  // ?cadencelog: what reaches the screen and why, for diagnosis on the user's display (cadence-log.js, local server only).
+  try { if (params.has('cadencelog')) sessionStorage.setItem('d2-cadencelog', '1'); if (sessionStorage.getItem('d2-cadencelog') === '1') startCadenceLog(host); } catch {}
   renderer.device.addEventListener('uncapturederror', e => console.error('[webgpu]', e.error.message));
   try { host.module.FS.mkdir('/save'); } catch {}
-  host.writeFile(BACKUP, backup);
+  await host.writeFile(BACKUP, backup);
   // ?devroms=1&denv=NAME=VALUE,... : extra engine variables for local diagnostics only.
   const devEnv = params.has('devroms') && params.get('denv') ? Object.fromEntries(params.get('denv').split(',').map(kv => kv.split('=')).filter(kv => /^(DAYTO|M3)_[A-Z0-9_]+$/.test(kv[0]))) : {};
-  host.start({ M3_BACKUP: BACKUP, ...env, ...devEnv, ...(params.get('profile') ? { DAYTO_VIDEO_PROFILE: '1' } : {}), ...(cpuTile ? { DAYTO_WEB_CPU_TILEGEN: '1' } : {}), ...(params.get('motion') ? { DAYTO_MOTION_TRACKING: '1' } : {}), ...(params.get('xform') === '0' ? { DAYTO_GPU_XFORM: '0' } : {}), ...(fieldHz60 ? { M3_SOUND_FIELD_US: '16667' } : {}) });
+  host.start({ M3_BACKUP: BACKUP, ...env, ...devEnv, ...(params.get('profile') ? { DAYTO_VIDEO_PROFILE: '1' } : {}), ...(cpuTile ? { DAYTO_WEB_CPU_TILEGEN: '1' } : {}), ...(params.get('motion') ? { DAYTO_MOTION_TRACKING: '1' } : {}), ...(params.get('xform') === '0' ? { DAYTO_GPU_XFORM: '0' } : {}), ...(fieldHz60 ? { M3_SOUND_FIELD_US: '16667' } : {}), ...(/^\d+$/.test(params.get('ppc') || '') ? { M3_PPC_MHZ: params.get('ppc') } : {}), DAYTO_WEB_INTERP: params.get('interp') === '0' ? '0' : '1' });   // ?ppc=66: the guest CPU speed (tests; main_web.c, default 166)
   setInterval(requestSave, 30000);
   document.addEventListener('visibilitychange', () => { if (document.hidden) requestSave(); });
   // As Daytona USA Web's pause notice: a hidden tab slows this cabinet while the
@@ -562,11 +570,13 @@ async function startLinked({ nodes, node, car, race }) {
   // (user, 2026-11-13: 57.524 Hz by default; at an assumed 60 the arrival
   // offset grew 41 ms/s and read as jitter). ?linkfield=60 restores the old
   // assumption (A/B).
-  const linkFieldUs = params.get('linkfield') === '60' ? 0 : fieldHz60 ? 16667 : 17385;
+  fieldHz60 = false; host.fieldMs = FIELD_MS;   // linked play: the original rate everywhere (see fieldHz60Asked)
+  host.linkPace = true; host.lock = null;   // never below the link's field rate (EngineHost.chooseLock)
+  const linkFieldUs = params.get('linkfield') === '60' ? 0 : 17385;
   link.fieldHz = linkFieldUs ? 1e6 / linkFieldUs : 60;
   await startEngine({ backup, env: { ...(linkFieldUs ? { DAYTO_CENTRAL_FIELD_US: String(linkFieldUs) } : {}), DAYTO_CENTRAL_NAME: 'web', DAYTO_CENTRAL_NODES: String(nodes), DAYTO_CENTRAL_NODE: String(node), DAYTO_CENTRAL_DELAY: String(link.delay), DAYTO_CENTRAL_TIMEOUT_MS: '8000',
     // Asynchronous central link with remote-car playout (?link=lockstep restores the barrier).
-    DAYTO_CENTRAL_ASYNC: params.get('link') === 'lockstep' ? '0' : '1', DAYTO_CENTRAL_PREDICT: params.get('predict') === '0' ? '0' : '1', DAYTO_CENTRAL_SMOOTH: params.get('smooth') === '0' ? '0' : '1', ...(params.has('gamelead') ? { DAYTO_CENTRAL_GAMELEAD: String(Math.round(Number(params.get('gamelead')) * 10) || 0) } : {}), ...(params.has('heading') ? { DAYTO_CENTRAL_HEADING: params.get('heading') === '0' ? '0' : '1' } : {}), ...(params.has('pipelead') ? { DAYTO_CENTRAL_PIPELEAD: String(Math.round(Number(params.get('pipelead')) * 10) | 0) } : {}), ...(params.has('inverse') ? { DAYTO_CENTRAL_INVERSE: params.get('inverse') === '0' ? '0' : '1' } : {}), ...(params.has('percar') ? { DAYTO_CENTRAL_PERCAR: params.get('percar') === '0' ? '0' : '1' } : {}), ...(params.has('snapjumps') ? { DAYTO_CENTRAL_SNAPJUMPS: params.get('snapjumps') === '1' ? '1' : '0' } : {}), ...(params.has('leadcap') ? { DAYTO_CENTRAL_LEADCAP: String(Number(params.get('leadcap')) | 0) } : {}), ...(params.has('leaddown') ? { DAYTO_CENTRAL_LEADDOWN: String(Math.round(Number(params.get('leaddown')) * 100) | 0) } : {}), ...(params.has('leadrate') ? { DAYTO_CENTRAL_LEADRATE: String(Math.round(Number(params.get('leadrate')) * 100) | 0) } : {}),
+    DAYTO_CENTRAL_ASYNC: params.get('link') === 'lockstep' ? '0' : '1', DAYTO_CENTRAL_PREDICT: params.get('predict') === '0' ? '0' : '1', DAYTO_CENTRAL_SMOOTH: params.get('smooth') === '0' ? '0' : '1', ...(params.has('gamelead') ? { DAYTO_CENTRAL_GAMELEAD: String(Math.round(Number(params.get('gamelead')) * 10) || 0) } : {}), ...(params.has('heading') ? { DAYTO_CENTRAL_HEADING: params.get('heading') === '0' ? '0' : '1' } : {}), DAYTO_CENTRAL_PIPELEAD: String(params.has('pipelead') ? Math.round(Number(params.get('pipelead')) * 10) | 0 : 6),   // 0.6 field (native 0.9): pthreads build, 2026-11-18 (reference/WEB_PTHREADS_20261118.md) ...(params.has('inverse') ? { DAYTO_CENTRAL_INVERSE: params.get('inverse') === '0' ? '0' : '1' } : {}), ...(params.has('percar') ? { DAYTO_CENTRAL_PERCAR: params.get('percar') === '0' ? '0' : '1' } : {}), ...(params.has('snapjumps') ? { DAYTO_CENTRAL_SNAPJUMPS: params.get('snapjumps') === '1' ? '1' : '0' } : {}), ...(params.has('leadcap') ? { DAYTO_CENTRAL_LEADCAP: String(Number(params.get('leadcap')) | 0) } : {}), ...(params.has('leaddown') ? { DAYTO_CENTRAL_LEADDOWN: String(Math.round(Number(params.get('leaddown')) * 100) | 0) } : {}), ...(params.has('leadrate') ? { DAYTO_CENTRAL_LEADRATE: String(Math.round(Number(params.get('leadrate')) * 100) | 0) } : {}),
     // Room option: player collision off gates the car-pair contact of two human cars (web/native/contact_gate.c).
     DAYTO_PLAYER_COLLISION: race.playerCollision === 0 ? '0' : '1',
     // Room option: CPU cars off asks the game for a humans-only race at AT/MT SELECT on every cabinet; on, a held Start cannot (web/real_players.py).

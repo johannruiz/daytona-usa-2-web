@@ -1,7 +1,10 @@
-// Browser audio for Daytona USA 2 (Claude 2026-11-11): 44.1 kHz stereo from
-// the engine, converted to float and sent to an AudioWorklet ring buffer.
+// Browser audio for Daytona USA 2 (Claude 2026-11-11; shared ring 2026-11-18, as Scud Race Web).
+// 44.1 kHz stereo from the engine: the sound board's thread writes an int16
+// ring in the engine's shared memory (web/native/platform_web_target.c) and
+// the AudioWorklet reads it there directly (audio-worklet.js), so no sample
+// passes through this page's thread.
 export class AudioOutput {
-  constructor() { this.context = null; this.node = null; this.muted = false; this.volume = 1; }
+  constructor() { this.context = null; this.node = null; this.muted = false; this.volume = 1; this.ring = null; }
   async start() {
     // resume() stays pending while the browser's autoplay policy blocks sound (no user
     // gesture yet in this page, e.g. a guest whose race starts from the network): never
@@ -13,13 +16,10 @@ export class AudioOutput {
     this.node.port.onmessage = e => { this.stats = e.data; };   // underruns, silent frames, queue level (audio-worklet.js)
     this.gain = this.context.createGain(); this.node.connect(this.gain).connect(this.context.destination);
     this.setVolume(this.volume);
+    if (this.ring) this.node.port.postMessage(this.ring);
   }
+  // The engine's memory and the ring's address (EngineHost.start).
+  attach(memory, ptr) { this.ring = { memory, ptr }; this.node?.port.postMessage(this.ring); }
   setVolume(v) { this.volume = v; if (this.gain) this.gain.gain.value = this.muted ? 0 : v; }
   setMuted(m) { this.muted = m; this.setVolume(this.volume); }
-  push(heap16, ptr, frames) {
-    if (!this.node || this.context.state !== 'running') return;
-    const src = heap16.subarray(ptr >> 1, (ptr >> 1) + frames * 2), out = new Float32Array(frames * 2);
-    for (let i = 0; i < out.length; i++) out[i] = src[i] / 32768;
-    this.node.port.postMessage(out, [out.buffer]);
-  }
 }

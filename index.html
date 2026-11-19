@@ -3,6 +3,13 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#05070b"><title>Daytona USA 2 Power Edition</title>
+  <!-- Favicon from the logo (build/evidence/favicon_20261118/make_favicon.py). -->
+  <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png">
+  <link rel="apple-touch-icon" href="img/icon-180.png">
+  <!-- Cross-origin isolation first (coi-register.js): the engine runs on threads. -->
+  <script src="coi-register.js"></script>
   <!-- Interface: Daytona USA Web (css/ and d1/, same markup and classes), adapted to Daytona USA 2. -->
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/host-console.css">
@@ -216,6 +223,10 @@
             <label><input type="radio" name="renderScale" value="0.75"><span><strong>75%</strong><small>Balanced.</small></span></label>
             <label><input type="radio" name="renderScale" value="1" checked><span><strong>100% <em>Default</em></strong><small>Full window resolution.</small></span></label>
           </fieldset>
+          <fieldset class="distance-options"><legend>Motion</legend>
+            <label><input type="radio" name="displayMotion" value="original" checked><span><strong>Original <em>Default</em></strong><small>The arcade’s 57.5 images per second.</small></span></label>
+            <label><input type="radio" name="displayMotion" value="smooth"><span><strong>Smooth</strong><small>A new image on every refresh of your display, between the game’s last two frames. Adds one frame (17 ms) of delay.</small></span></label>
+          </fieldset>
         </section>
         <section id="inputPanel" class="settings-panel" role="tabpanel" aria-labelledby="inputTab" hidden><div id="keyboardControls"></div></section>
         <section id="soundPanel" class="settings-panel" role="tabpanel" aria-labelledby="soundTab" hidden>
@@ -239,6 +250,6 @@
   </div>
   <div id="menuGamepadHints" class="menu-gamepad-hints" role="status" aria-label="Controller menu controls" hidden></div>
   <script type="module" src="main.js"></script>
-  <small id="buildVersion" class="build-version">v0.9.8 · <time datetime="2026-11-18">18.11.26</time></small>
+  <small id="buildVersion" class="build-version">v0.10.0 · <time datetime="2026-11-19">19.11.26</time></small>
 </body>
 </html>

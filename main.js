@@ -253,6 +253,23 @@ async function loadEngine() {
   host.backupSaved = bytes => saveStored(nvramName, bytes);   // the engine worker sends the saved file
   return host;
 }
+// Force feedback for a wheel bridge (2026-11-21, as Scud Race Web): the Arcade
+// Launcher's SDL3 bridge reads it. The forces are the drive board's own, from
+// its Z80 program (web/native/drive_board_z80.c): a constant torque -1..1
+// (+ = right), the centring spring, the vibration and the servo board's gain,
+// 0..1; damper and friction are 0 (the board has neither). While the game is
+// paused, a menu is open, the page is hidden or the engine stopped, `live` is
+// false and every force 0: the engine keeps its last values then, and a wheel
+// must not hold them. The gamepad keeps its own vibration.
+window.arcadeForceFeedback = Object.freeze({
+  version: 1, game: 'd2',
+  read() {
+    const f = host?.ffb;
+    const live = !!f && f[7] === 1 && running && !host.paused && !host.stopped && !host.exited && $('overlay').hidden && !document.hidden;
+    return live ? { constant: f[1], spring: f[2], damper: f[3], friction: f[4], rumble: f[5], gain: f[6], live: true }
+      : { constant: 0, spring: 0, damper: 0, friction: 0, rumble: 0, gain: 0, live: false };
+  },
+});
 engineReady = loadEngine();
 engineReady.then(() => status('Choose your ROM to start.')).catch(e => status(e.message));
 function romLoaded(text) {
@@ -285,8 +302,9 @@ $('changeROM').addEventListener('click', () => { if (started) { restartWith({ vi
 async function devRoms() {
   await engineReady;
   try { host.module.FS.mkdir('/roms'); } catch {}
-  for (const n of ['crom', 'banked_crom', 'vrom', 'audiocpu', 'samples', 'dsb2_mpegcpu', 'dsb2_mpeg']) {
-    const r = await fetch(`./dev-roms/${n}.bin`); if (!r.ok) throw new Error('dev ROM missing: ' + n);
+  for (const n of ['crom', 'banked_crom', 'vrom', 'audiocpu', 'samples', 'dsb2_mpegcpu', 'dsb2_mpeg', 'drivebd']) {
+    const r = await fetch(`./dev-roms/${n}.bin`);
+    if (!r.ok) { if (n === 'drivebd') continue; throw new Error('dev ROM missing: ' + n); }   // the drive board's program is optional
     await host.writeRegion(n, new Uint8Array(await r.arrayBuffer()));
   }
   romLoaded('Development ROM regions loaded.');

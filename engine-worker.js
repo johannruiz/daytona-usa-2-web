@@ -107,7 +107,7 @@ self.onmessage = async e => {
         onAbort: what => post({ t: 'abort', what: String(what) }),
         daytonaHost,
       });
-      post({ t: 'ready', memory: M.wasmMemory, control: M._dayto_web_control_ptr(), input: M._dayto_web_input_ptr(), audio: M._dayto_web_audio_ring(), ram: M._dayto_web_ram_ptr(), packet: M._dayto_web_frame_packet(), cores: navigator.hardwareConcurrency || 0 });
+      post({ t: 'ready', memory: M.wasmMemory, control: M._dayto_web_control_ptr(), input: M._dayto_web_input_ptr(), audio: M._dayto_web_audio_ring(), ram: M._dayto_web_ram_ptr(), packet: M._dayto_web_frame_packet(), ffb: M._dayto_web_ffb_ptr ? M._dayto_web_ffb_ptr() : 0, cores: navigator.hardwareConcurrency || 0 });
     } else if (d.t === 'alloc') {
       // Memory (2026-11-18): the page writes large data (the ROM ZIP, dev ROM
       // regions) straight into the engine's shared memory. Nothing large ever

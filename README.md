@@ -1,6 +1,6 @@
 # Daytona USA 2 Power Edition — Web
 
-Version 0.10.2
+Version 0.10.3
 
 A static recompilation of the arcade game *Daytona USA 2 Power Edition* (Sega Model 3, 1998), running in the browser with WebAssembly and WebGPU. Single player and online linked races for up to 16 drivers.
 
@@ -40,7 +40,7 @@ The `.nojekyll` file must stay so that every file is served as is. The game runs
 
 - The car starts in neutral: pick a gear before you accelerate.
 - Steering wheels and touch screens are also supported. Every input can be remapped in **Settings**.
-- Force feedback wheels: the arcade's own drive board program runs with the game, and its forces are available to wheel bridges such as the Arcade Launcher (`window.arcadeForceFeedback`).
+- Force feedback wheels: the arcade's own drive board program runs with the game. Its forces reach your wheel through [Arcade FFB Helper](https://github.com/johannruiz/arcade-ffb-helper), a small app for Windows and macOS: start it, then turn on **Settings → Experimental → Force feedback with FFB Helper**. Chrome asks once to allow access to apps on this device. Other wheel bridges can read the same forces (`window.arcadeForceFeedback`).
 
 ## Multiplayer
 

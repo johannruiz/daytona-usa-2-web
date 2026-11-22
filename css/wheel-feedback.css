@@ -1,6 +1,17 @@
-.wheel-setup-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.75fr);gap:24px;align-items:start}
+.wheel-setup-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:24px;align-items:start}
 #experimentalPanel{container:wheel-setup / inline-size}
-@container wheel-setup (max-width:760px){.wheel-setup-grid{grid-template-columns:1fr}}
+/* One centred column (2026-11-21): the wheel setup no longer has a second card beside it. */
+#experimentalPanel>*{max-width:680px;margin-left:auto;margin-right:auto}
+/* Force feedback through Arcade FFB Helper (ffb-helper-ui.js) */
+.ffb-helper{margin-bottom:22px}
+.ffb-helper-state{display:flex;align-items:flex-start;gap:8px;margin:10px 2px 0}
+.ffb-helper-state p{margin:0;font-size:11px;line-height:1.6;color:#62625b}
+.ffb-helper-dot{flex:none;width:8px;height:8px;margin-top:5px;border-radius:50%;background:#bcbcb2}
+.ffb-helper[data-state=connected] .ffb-helper-dot{background:#2f9d5b;box-shadow:0 0 0 3px #2f9d5b22}
+.ffb-helper[data-state=connecting] .ffb-helper-dot,.ffb-helper[data-state=waiting] .ffb-helper-dot,.ffb-helper[data-state=nowheel] .ffb-helper-dot{background:#d29a00}
+.ffb-helper-links{display:flex;gap:16px;flex-wrap:wrap;margin:6px 2px 0 18px;font-size:11px}
+.ffb-helper-links a{color:#a40909;font-weight:700}
+.ffb-helper-links a[hidden]{display:none}
 .wheel-input-section,.wheel-feedback-card{min-width:0}
 .wheel-input-section>h3,.wheel-feedback-card h3{font-size:16px;margin:0 0 10px;font-weight:800}
 .wheel-step{display:inline-grid;place-items:center;width:24px;height:24px;border:1px solid #c9c8be;border-radius:50%;margin-right:7px;font-size:12px;color:#77776b}

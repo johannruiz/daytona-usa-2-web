@@ -21,6 +21,7 @@ import { createGamepadRumble } from './d1/haptics.js';
 import { startRumbleLog } from './rumble-log.js';
 import { startCadenceLog } from './cadence-log.js';
 import { createWheelControls } from './d1/wheel-controls.js';
+import { mountFfbHelper } from './ffb-helper-ui.js';
 import { createTouchControls } from './d1/touch.js';
 import { mountMenuGamepad } from './d1/menu-gamepad.js';
 import { createGamepadHome } from './d1/gamepad-home.js';
@@ -270,6 +271,8 @@ window.arcadeForceFeedback = Object.freeze({
       : { constant: 0, spring: 0, damper: 0, friction: 0, rumble: 0, gain: 0, live: false };
   },
 });
+// The same forces for a wheel in the browser, through Arcade FFB Helper (Experimental tab).
+mountFfbHelper($('ffbHelper'));
 engineReady = loadEngine();
 engineReady.then(() => status('Choose your ROM to start.')).catch(e => status(e.message));
 function romLoaded(text) {

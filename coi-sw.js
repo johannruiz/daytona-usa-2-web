@@ -25,9 +25,16 @@ self.addEventListener('fetch', event => {
   if (r.cache === 'only-if-cached' && r.mode !== 'same-origin') return;
   const url = new URL(r.url);
   if (url.origin !== self.location.origin) return;   // only the site's own responses get the headers
+  // Every file of the site is revalidated with the server (an unchanged one costs a 304). GitHub Pages
+  // lets the browser keep each file 10 minutes, so right after a publication a page could mix new and
+  // old modules: v0.10.3's main.js ran with v0.10.2's version.js and joined rooms as 0.10.2 (2026-11-21).
+  let req = r;
+  if (r.method === 'GET' && (r.cache === 'default' || r.cache === 'force-cache')) {
+    req = r.mode === 'navigate' ? new Request(r.url, { cache: 'no-cache', credentials: 'same-origin' }) : new Request(r, { cache: 'no-cache' });
+  }
   event.respondWith((async () => {
     let response;
-    try { response = await fetch(r); } catch (e) { return Response.error(); }
+    try { response = await fetch(req); } catch (e) { return Response.error(); }
     if (response.status === 0 || response.type === 'opaque') return response;
     const headers = new Headers(response.headers);
     headers.set('Cross-Origin-Opener-Policy', 'same-origin');

@@ -200,7 +200,7 @@ export class PrivateRoom {
     const nodes = this.link.motionStats?.nodes; if (!Array.isArray(nodes)) return;
     for (const m of this.members) {
       if (m.id === this.id || m.departed || m.node == null || !nodes.find(n => n.node === m.node)?.dead) continue;
-      m.departed = true; m.connection = 'stalled';
+      m.departed = true; m.connection = 'stalled'; this.link.dropNode?.(m.node);   // the other guests give it up now too
       this.logEvent('stalled', m.name, `car ${m.cabinet}`); this.onEvent({ kind: 'stalled', name: m.name, inGame: true });
       this.publish();
     }
@@ -234,7 +234,19 @@ export class PrivateRoom {
     const gone = c => ['closed', 'failed'].includes(c?.peerConnection?.connectionState) || c?.dataChannel?.readyState === 'closed';
     if (this.isHost) for (const c of [...this.peers.keys()]) if (gone(c)) { this.disconnected(c); try { c.close(); } catch {} }
     const hc = this.link.hostConn;
-    if (!this.isHost && hc && ['pending', 'lobby', 'playing', 'waiting'].includes(this.phase) && gone(hc)) { this.disconnected(hc); try { hc.close(); } catch {} }
+    if (!this.isHost && hc && ['pending', 'lobby', 'playing', 'waiting'].includes(this.phase) && gone(hc)) { this.disconnected(hc); try { hc.close(); } catch {} return; }
+    // The host cabinet vanished during the linked game (2026-11-26, user: everyone froze when a
+    // player left). This engine gives the master up after 8 s without its records and never takes
+    // it back (central_link.c), and without the master, which holds the shared race state, the
+    // race stands still. WebRTC takes 15-20 s, or longer, to close a connection whose other end
+    // crashed, slept or lost its network. So: the master given up and nothing at all heard from
+    // the host (records, link pings 4/s, room pings) for 6 s, on two checks 2 s apart. A guest
+    // whose own page froze hears the host again at once and waits in the room (outOfRaceCheck).
+    if (!this.isHost && hc && this.phase === 'playing' && this.link.session) {
+      const quiet = performance.now() - (this.link.lastHostAt || 0) > 6000, dead = !!this.link.motionStats?.nodes?.find(n => n.node === 0)?.dead;
+      this.hostSilent = quiet && dead ? (this.hostSilent || 0) + 1 : 0;
+      if (this.hostSilent >= 2) { this.hostSilent = 0; this.logEvent('host-silent', ''); this.disconnected(hc); try { hc.close(); } catch {} }
+    }
   }
   message(d, c) {
     if (!d || typeof d !== 'object') return;

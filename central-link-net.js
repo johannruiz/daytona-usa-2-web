@@ -230,6 +230,7 @@ export class CentralLinkNet {
     this.onSession({ nodes, node: 0, ...shared, ...extra(null) });
   }
   receive(d, from) {
+    if (!this.isHost) this.lastHostAt = performance.now();   // a guest hears only the host (room.js host loss)
     if (d instanceof ArrayBuffer || ArrayBuffer.isView(d)) {   // field record
       const bytes = d instanceof ArrayBuffer ? new Uint8Array(d) : new Uint8Array(d.buffer, d.byteOffset, d.byteLength);
       const node = bytes[0], seq = new DataView(bytes.buffer, bytes.byteOffset + 1, 4).getUint32(0, true);
@@ -248,13 +249,26 @@ export class CentralLinkNet {
         this.rtt[from.node] = Math.round(Math.min(...list.map(x => x[1])));
       }
     }
-    else if (d.t === 'joined') { if (d.node >= 0 && d.node < MAX_NODES) Atomics.store(this.joinedState, d.node, d.state); if (this.isHost) this.broadcast(d, from); this.wake(); }
+    else if (d.t === 'joined') {
+      if (!(d.node >= 0 && d.node < MAX_NODES)) return;
+      // A cabinet given up on stays out of this link session (central_link.c): never back to 0/1.
+      if (Atomics.load(this.joinedState, d.node) !== 2) Atomics.store(this.joinedState, d.node, d.state);
+      if (this.isHost) this.broadcast(d, from); this.wake();
+    }
     else if (d.t === 'linked') { this.isLinked = true; }
     else this.onMessage(d, from);
   }
   broadcast(msg, except) { for (const c of this.conns) if (c !== except && c.open) c.send(msg); }
   forward(bytes, except) { const copy = bytes.slice().buffer; for (const c of this.conns) if (c !== except && c.open) this.sendRecord(c, copy); }
-  leave(node) { if (node === undefined) return; Atomics.store(this.joinedState, node, 2); this.wake(); this.onStatus(`Cabinet ${node + 1} left.`); }
+  // A cabinet left the link. The host also tells the other guests at once
+  // (2026-11-26): before, each guest's engine only gave it up after 8 s of
+  // silence, and the shared race state it holds stood still meanwhile.
+  leave(node) { if (node === undefined) return; this.dropNode(node); this.onStatus(`Cabinet ${node + 1} left.`); }
+  dropNode(node) {
+    if (!(node >= 0 && node < MAX_NODES)) return;
+    Atomics.store(this.joinedState, node, 2); this.wake();
+    if (this.isHost && node) this.broadcast({ t: 'joined', node, state: 2 }, this.conns.find(c => c.node === node));
+  }
   disconnect() { this.stopIce?.(); this.stopIce = null; clearInterval(this.pingTimer); try { this.peer?.destroy(); } catch {} this.peer = null; this.conns = []; this.hostConn = null; this.isHost = false; this.session = false; }
   // ---- engine transport (src/comm/central_link.c, DAYTO_WEB) --------------
   // The engine worker calls these through engine-host.js messages; it reads
@@ -269,16 +283,20 @@ export class CentralLinkNet {
   joined(j) { return this.joinedState[j]; }
   setLinked() { this.isLinked = true; this.broadcast({ t: 'linked' }); }
   linked() { return this.isLinked; }
-  store(node, seq, block) {
+  // own: this cabinet's record. The engine worker raises pub[own node] itself
+  // before posting it (engine-worker.js publish), so the freshness test below
+  // never passed for it and the host's race order never saw the host's own car
+  // (user, 2026-11-26: the host's name missing from the standings).
+  store(node, seq, block, own = false) {
     if (node >= MAX_NODES || block.length < SLOT) return;
     // The engine wrote its own records into the buffer already (tag set): not again.
     const r = seq % RING; if (this.tags[node][r] !== seq) { this.tags[node][r] = -1; this.blocks[node][r].set(block.subarray(0, SLOT)); this.tags[node][r] = seq; }
-    if (this.onRecord && seq + 1 > this.pub[node]) this.onRecord(node, seq, block);
+    if (this.onRecord && (own || seq + 1 > this.pub[node])) this.onRecord(node, seq, block);
     if (seq + 1 > this.pub[node]) this.pub[node] = seq + 1;
     this.wake();
   }
   publish(seq, block) {
-    this.store(this.node, seq, block);
+    this.store(this.node, seq, block, true);
     const msg = new Uint8Array(5 + SLOT); msg[0] = this.node; new DataView(msg.buffer).setUint32(1, seq, true); msg.set(block, 5);
     if (this.isHost) this.forward(msg, null); else if (this.hostConn?.open) this.sendRecord(this.hostConn, msg.buffer);
   }

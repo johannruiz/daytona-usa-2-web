@@ -3,7 +3,7 @@
 // only connect cabinets with the same BUILD_ID: a guest from another version is
 // refused, and public rooms of another version show as "Different version".
 // Raise CLIENT_VERSION and RELEASE_DATE with every publication.
-export const CLIENT_VERSION = '0.10.5';
-export const RELEASE_DATE = '2026-11-26';
+export const CLIENT_VERSION = '0.10.6';
+export const RELEASE_DATE = '2026-11-27';
 export const BUILD_ID = `daytona2pe-web-${CLIENT_VERSION}`;
 export const versionMismatch = () => `Version mismatch. This room requires v${CLIENT_VERSION}. All players must reload the latest game page before joining.`;

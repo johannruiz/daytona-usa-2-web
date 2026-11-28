@@ -601,6 +601,8 @@ async function startLinked({ nodes, node, car, race }) {
     // Room option: player collision off gates the car-pair contact of two human cars (web/native/contact_gate.c).
     DAYTO_PLAYER_COLLISION: race.playerCollision === 0 ? '0' : '1',
     // Room option: CPU cars off asks the game for a humans-only race at AT/MT SELECT on every cabinet; on, a held Start cannot (web/real_players.py).
-    DAYTO_REAL_PLAYERS: race.cpuCars === 0 ? '1' : '0' } });
+    DAYTO_REAL_PLAYERS: race.cpuCars === 0 ? '1' : '0',
+    // Room option (2026-11-27): the host's course wins at COURSE SELECT instead of the cabinets' vote (web/host_course.py). On unless chosen.
+    DAYTO_HOST_COURSE: race.hostCourse === 0 ? '0' : '1' } });
   room.changed();
 }
